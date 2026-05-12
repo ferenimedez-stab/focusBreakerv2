@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+
+## Commit 1: Database Layer
+- **Timestamp:** 2026-05-12 1:34 PM
+- **Branch:** juliet/phase-1-backend
+- **Commit:** "Implement database layer with schema and CRUD operations"
+- **What:** Implemented SQLite database manager with complete schema definition. Built CRUD operations for Task, WorkSession, Break, Streak, and Settings models. Added connection pooling, migration support, and transaction safety with comprehensive error handling.
+- **Files:**
+  - focusbreaker/data/db.py
+
 ## 2026-05-12 - Initial Development Sprint
 
 ### Initial Repo Setup
