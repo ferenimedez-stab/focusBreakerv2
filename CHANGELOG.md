@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## Core Logic Tests
+- **Timestamp:** 2026-05-12
+- **Author:** Agnote
+- **Branch:** rovilyn/phase-2-core-logic
+- **Commit:** "Add core logic tests and finalize input blocking"
+- **What:** Completed comprehensive unit test suite for all core logic systems. Tests validate timer accuracy, mode rule enforcement, session transitions, streak tracking logic, and input blocker functionality. All tests pass with clean error handling.
+- **Files:**
+  - tests/unit/test_timer.py
+  - tests/unit/test_mode_controller.py
+  - tests/unit/test_session_manager.py
+  - tests/unit/test_streak_manager.py
+  - tests/unit/test_input_blocker.py
+
+## Session & Streak Management
+- **Timestamp:** 2026-05-12
+- **Author:** Agnote
+- **Branch:** rovilyn/phase-2-core-logic
+- **Commit:** "Implement session manager, streak tracking, and input blocker"
+- **What:** Implemented session manager with complete lifecycle management (creation, work, break, completion) and mode-based break scheduling. Built streak tracking system with milestone detection and reward calculation. Implemented input blocker for keyboard/mouse control during focus periods with escape hatch emergency exit support.
+- **Files:**
+  - focusbreaker/core/session_manager.py
+  - focusbreaker/core/streak_manager.py
+  - focusbreaker/system/input_blocker.py
+
 ## UI Foundation
 - **Timestamp:** 2026-05-12
 - **Author:** Enimedez
