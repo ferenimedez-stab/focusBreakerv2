@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## Session & Streak Management
+- **Timestamp:** 2026-05-12
+- **Author:** Agnote
+- **Branch:** rovilyn/phase-2-core-logic
+- **Commit:** "Implement session manager, streak tracking, and input blocker"
+- **What:** Implemented session manager with complete lifecycle management (creation, work, break, completion) and mode-based break scheduling. Built streak tracking system with milestone detection and reward calculation. Implemented input blocker for keyboard/mouse control during focus periods with escape hatch emergency exit support.
+- **Files:**
+  - focusbreaker/core/session_manager.py
+  - focusbreaker/core/streak_manager.py
+  - focusbreaker/system/input_blocker.py
+
 ## UI Foundation
 - **Timestamp:** 2026-05-12
 - **Author:** Enimedez
