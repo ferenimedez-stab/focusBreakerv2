@@ -2,18 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
-## Timer & Mode Controller 
+## Display Control & Tests 
 - **Timestamp:** 2026-05-12 
-- **Author:** Enimedez
-- **Branch:** main
-- **Commit:** "Implement timer system and mode controller"
-- **What:** Implemented tick-based timer system with time formatting (mm:ss, hh:mm:ss) and pause/resume support. Built mode controller with comprehensive per-mode rules and constraints. Defined break eligibility logic and permission rules (snooze, extend, skip) based on work mode.
+- **Author:** Pontanares
+- **Branch:** juliet/phase-1-backend
+- **Commit:** "Add display control and finalize data layer tests"
+- **What:** Implemented display control system with monitor detection and brightness adjustment. Completed comprehensive unit tests for database, audio, and media manager systems. All data persistence operations validated and tested.
 - **Files:**
-  - focusbreaker/core/timer.py
-  - focusbreaker/core/mode_controller.py
+  - focusbreaker/system/display.py
+  - tests/unit/test_display.py
 
 ## Audio & Media Systems 
-- **Timestamp:** 2026-05-12
+- **Timestamp:** 2026-05-12 
 - **Author:** Pontanares
 - **Branch:** juliet/phase-1-backend
 - **Commit:** "Add audio system and media manager"
@@ -21,6 +21,10 @@ All notable changes to this project will be documented in this file.
 - **Files:**
   - focusbreaker/system/audio.py
   - focusbreaker/system/media_manager.py
+
+## Database Layer
+- **Timestamp:** 2026-05-12 
+- **Author:** Pontanares
 
 ## Database Layer
 - **Timestamp:** 2026-05-12 
