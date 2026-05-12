@@ -38,6 +38,16 @@ All notable changes to this project will be documented in this file.
 
 ## UI Foundation
 - **Timestamp:** 2026-05-12
+- **Author:** Enimedez
+- **Branch:** main
+- **Commit:** "Enhance main window behavior: show, raise, and activate after session; update break notification message"
+- **What:** Updated the main window to show, raise, and activate after a session ends, and refined the break notification message.
+- **Files:**
+  - focusbreaker/main.py
+  - focusbreaker/ui/main_window.py
+
+## UI Foundation
+- **Timestamp:** 2026-05-12
 - **Author:** Tercero
 - **Branch:** michelle/phase-3-ui
 - **Commit:** "Implement UI styles, components, and start main window"
