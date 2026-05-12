@@ -1126,15 +1126,13 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logger.error(f"Error handling break action '{action}': {e}", exc_info=True)
         
-        # Ensure main window is restored after break
-        self.showNormal()
-        self.raise_()
-        self.activateWindow()
+        # Keep the main window hidden while the active session continues.
+        self.hide()
 
         try:
             # Send notifications based on action
             if action == "taken":
-                self.tray.notify("Break Completed", "Great job! Get back to work when ready.", duration_ms=4000)
+                self.tray.notify("Break Done", "Your break is complete.", duration_ms=4000)
             elif action == "snoozed":
                 self.tray.notify("Break Snoozed", "Your snooze pass has been used.", duration_ms=4000)
             elif action == "skipped":
