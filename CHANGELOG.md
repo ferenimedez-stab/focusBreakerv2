@@ -12,6 +12,16 @@ All notable changes to this project will be documented in this file.
   - focusbreaker/system/display.py
   - tests/unit/test_display.py
 
+## Timer & Mode Controller 
+- **Timestamp:** 2026-05-12 
+- **Author:** Enimedez
+- **Branch:** main
+- **Commit:** "Implement timer system and mode controller"
+- **What:** Implemented tick-based timer system with time formatting (mm:ss, hh:mm:ss) and pause/resume support. Built mode controller with comprehensive per-mode rules and constraints. Defined break eligibility logic and permission rules (snooze, extend, skip) based on work mode.
+- **Files:**
+  - focusbreaker/core/timer.py
+  - focusbreaker/core/mode_controller.py
+
 ## Audio & Media Systems 
 - **Timestamp:** 2026-05-12 
 - **Author:** Pontanares
