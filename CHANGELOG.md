@@ -2,7 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
-## Commit 2: Audio & Media Systems 
+## Timer & Mode Controller 
+- **Timestamp:** 2026-05-12 
+- **Author:** Enimedez
+- **Branch:** main
+- **Commit:** "Implement timer system and mode controller"
+- **What:** Implemented tick-based timer system with time formatting (mm:ss, hh:mm:ss) and pause/resume support. Built mode controller with comprehensive per-mode rules and constraints. Defined break eligibility logic and permission rules (snooze, extend, skip) based on work mode.
+- **Files:**
+  - focusbreaker/core/timer.py
+  - focusbreaker/core/mode_controller.py
+
+## Audio & Media Systems 
 - **Timestamp:** 2026-05-12
 - **Author:** Pontanares
 - **Branch:** juliet/phase-1-backend
@@ -12,7 +22,7 @@ All notable changes to this project will be documented in this file.
   - focusbreaker/system/audio.py
   - focusbreaker/system/media_manager.py
 
-## Commit 1: Database Layer
+## Database Layer
 - **Timestamp:** 2026-05-12 
 - **Author:** Pontanares
 - **Branch:** juliet/phase-1-backend
@@ -20,8 +30,6 @@ All notable changes to this project will be documented in this file.
 - **What:** Implemented SQLite database manager with complete schema definition. Built CRUD operations for Task, WorkSession, Break, Streak, and Settings models. Added connection pooling, migration support, and transaction safety with comprehensive error handling.
 - **Files:**
   - focusbreaker/data/db.py
-
-## 2026-05-12 - Initial Development Sprint
 
 ### Initial Repo Setup
 - **Timestamp:** 2026-05-12
@@ -31,4 +39,5 @@ All notable changes to this project will be documented in this file.
 - **What:** Created initial repository structure with application configuration, data model definitions, and main entry point. Established project foundation for all team contributions.
 - **Files:** focusbreaker/config.py, focusbreaker/data/models.py, focusbreaker/main.py, pyproject.toml, requirements.txt, CHANGELOG.md
 
+## 2026-05-12 - Initial Development Sprint
 ---
