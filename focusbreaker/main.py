@@ -136,6 +136,9 @@ def main():
         # Step 7: Show Main Window
         window = MainWindow(db)
         window.show()
+        window.showNormal()
+        window.raise_()
+        window.activateWindow()
         # Keep a reference to the main window
         global _main_window
         _main_window = window
