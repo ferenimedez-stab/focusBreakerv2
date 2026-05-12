@@ -203,9 +203,9 @@ class SessionManager(QObject):
             self.stop_session("emergency_exit")
             return
 
+        # Resume the session timer after the break action is handled
+        self._work_timer.start()
         self._update_quality()
-        if self.session is not None:
-            self._work_timer.start()
 
     def complete_session(self):
         """Called when the user chooses 'End Session' or automatically for Strict/Focused."""
