@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## Commit 3: Break Windows & Tray (Michelle)
+## Break Windows & Tray
 - **Timestamp:** 2026-05-13
 - **Author:** Tercero
 - **Branch:** michelle/phase-3-ui
