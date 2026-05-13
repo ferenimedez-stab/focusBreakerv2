@@ -2,16 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
-## Commit 1: UI Foundation (Michelle)
+## Dialogs & Windows
 - **Timestamp:** 2026-05-13
+- **Author:** Tercero
 - **Branch:** michelle/phase-3-ui
-- **Commit:** "Implement UI styles, components, and start main window"
-- **What:** Implemented comprehensive global styling system with theme colors and mode-specific style variants (normal/strict/focused). Built reusable UI components including progress ring, themed dialogs, buttons, and custom widgets. Started main window with layout foundation (sidebar, content area, timer display) and session information display.
+- **Commit:** "Add main window, task dialog, settings, and analytics"
+- **What:** Completed main window with session manager integration and settings quick access. Implemented task creation/edit dialog with mode selection and break configuration. Built settings preferences dialog. Implemented analytics/history view for session tracking and statistics display.
 - **Files:**
-  - focusbreaker/ui/styles.py
-  - focusbreaker/ui/components/dialogs.py
-  - focusbreaker/ui/components/progress_ring.py
-  - focusbreaker/ui/main_window.py
+  - focusbreaker/ui/task_dialog.py
+  - focusbreaker/ui/settings_dialog.py
+  - focusbreaker/ui/analytics_dialog.py
 
 ## Core Logic Tests
 - **Timestamp:** 2026-05-12
