@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## Commit 1: UI Foundation (Michelle)
+- **Timestamp:** 2026-05-13
+- **Branch:** michelle/phase-3-ui
+- **Commit:** "Implement UI styles, components, and start main window"
+- **What:** Implemented comprehensive global styling system with theme colors and mode-specific style variants (normal/strict/focused). Built reusable UI components including progress ring, themed dialogs, buttons, and custom widgets. Started main window with layout foundation (sidebar, content area, timer display) and session information display.
+- **Files:**
+  - focusbreaker/ui/styles.py
+  - focusbreaker/ui/components/dialogs.py
+  - focusbreaker/ui/components/progress_ring.py
+  - focusbreaker/ui/main_window.py
+
 ## Core Logic Tests
 - **Timestamp:** 2026-05-12
 - **Author:** Agnote
