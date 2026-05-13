@@ -1,6 +1,36 @@
-# FocusBreaker Changelog
+# FocusBreaker — Changelog
 
 All notable changes to this project will be documented in this file.
+
+## Add core modules, UI components, integration tests, and development scripts
+- **Timestamp:** 2026-05-13
+- **Author:** Enimedez
+- **Branch:** main
+- **Commit:** "chore: Add core modules, UI components, integration tests, dev scripts, and assets; update .gitignore"
+- **What:** Added core focus-mode logic (scheduler, escape hatch, hot reload), UI components (achievements modal, session dialogs, streak celebration), integration and unit tests (conftest, integration suite, unit tests), development scripts (`dev.py`), and asset files (fonts, images). Local runtime artifacts (DB), large media, archived code, and draft documentation were intentionally excluded and listed in `.gitignore` for cleaner repository.
+- **Files added (staged):**
+  - `.gitignore`
+  - `dev.py`
+  - `main.py`
+  - `assets/` (fonts, images)
+  - `focusbreaker/core/__init__.py`
+  - `focusbreaker/core/escape_hatch.py`
+  - `focusbreaker/core/hot_reload.py`
+  - `focusbreaker/core/scheduler.py`
+  - `focusbreaker/data/__init__.py`
+  - `focusbreaker/system/__init__.py`
+  - `focusbreaker/ui/__init__.py`
+  - `focusbreaker/ui/achievements_modal.py`
+  - `focusbreaker/ui/floating_session.py`
+  - `focusbreaker/ui/session_end_dialog.py`
+  - `focusbreaker/ui/session_view.py`
+  - `focusbreaker/ui/setup_dialog.py`
+  - `focusbreaker/ui/streak_celebration.py`
+  - `tests/conftest.py`
+  - `tests/integration/`
+  - `tests/ui/`
+  - `tests/unit/test_escape_hatch.py`
+  - `tests/unit/test_scheduler.py`
 
 ## Break Windows & Tray
 - **Timestamp:** 2026-05-13
