@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## Commit 3: Break Windows & Tray (Michelle)
+- **Timestamp:** 2026-05-13
+- **Author:** Tercero
+- **Branch:** michelle/phase-3-ui
+- **Commit:** "Add break windows, tray icon, and splash screen"
+- **What:** Implemented break windows for all three modes (small pop-up for normal, full-screen for strict/focused) with media display integration. Built system tray icon with context menu and quick actions. Implemented loading splash screen with progress indication. Comprehensive UI tests for all interactive components.
+- **Files:**
+  - focusbreaker/ui/break_window.py
+  - focusbreaker/ui/tray_icon.py
+  - focusbreaker/ui/splash_screen.py
+
+## Dialogs & Windows
+- **Timestamp:** 2026-05-13
+- **Author:** Tercero
+- **Branch:** michelle/phase-3-ui
+- **Commit:** "Add main window, task dialog, settings, and analytics"
+- **What:** Completed main window with session manager integration and settings quick access. Implemented task creation/edit dialog with mode selection and break configuration. Built settings preferences dialog. Implemented analytics/history view for session tracking and statistics display.
+- **Files:**
+  - focusbreaker/ui/task_dialog.py
+  - focusbreaker/ui/settings_dialog.py
+  - focusbreaker/ui/analytics_dialog.py
+
 ## Core Logic Tests
 - **Timestamp:** 2026-05-12
 - **Author:** Agnote
