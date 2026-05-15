@@ -63,4 +63,4 @@ def test_main_window_start_session_flow(MockDialog, qtbot, mock_db):
         
         MockDialog.assert_called_once()
         assert window.session_mgr.is_active is True
-        assert window.stack.currentIndex() == 4 # Session view
+        assert window.stack.currentIndex() == 0 # Home view

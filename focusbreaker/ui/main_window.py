@@ -1,17 +1,23 @@
 import sys
+import logging
 from datetime import datetime
+
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QFrame, QScrollArea, QStackedWidget, QSizePolicy,
     QSpacerItem, QMessageBox, QTableWidget, QHeaderView, QInputDialog,
     QBoxLayout, QLineEdit, QSizeGrip, QProgressBar, QDialog, QComboBox, QApplication
 )
+
 from PySide6.QtCore import Qt, Signal, QPoint, QSize, Property, QTimer, QEvent
 from PySide6.QtGui import QFont, QCursor, QCloseEvent, QIcon, QPixmap, QPainter, QColor
 
 from focusbreaker.config import Colors, MODES, UIConfig, Palette, APP_NAME, AppPaths
+
 from focusbreaker.core.session_manager import SessionManager
 from focusbreaker.core.timer import fmt_time
+
+logger = logging.getLogger(__name__)
 from focusbreaker.data.db import DBManager
 from focusbreaker.data.models import Task, WorkSession, Streak
 from focusbreaker.ui.task_dialog import TaskDialog
@@ -19,10 +25,13 @@ from focusbreaker.ui.settings_dialog import SettingsPage
 from focusbreaker.ui.analytics_dialog import AnalyticsPage
 from focusbreaker.ui.tray_icon import SystemTrayManager
 from focusbreaker.ui.floating_session import FloatingSessionWindow
+
 from focusbreaker.ui.break_window import NormalBreakWindow, StrictBreakWindow, FocusEndBreakWindow
+
 from focusbreaker.ui.achievements_modal import AchievementsModal
 from focusbreaker.ui.components.progress_ring import ProgressRing
 from focusbreaker.ui.components.dialogs import ThemedConfirmDialog, ThemedMessageDialog
+from focusbreaker.ui.components.completion_modal import SessionCompleteModal
 from focusbreaker.system.audio import AudioManager
 from focusbreaker.system.display import DisplayController
 from focusbreaker.system.input_blocker import InputBlocker
@@ -278,10 +287,11 @@ class MainWindow(QMainWindow):
         self.input_blocker = InputBlocker()
         self.tray = SystemTrayManager(self)
         
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowMinimizeButtonHint | Qt.WindowType.WindowSystemMenuHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
         self.resize(1000, 750)
+        self.floating_window = None
         self._setup_signals()
         self._build_ui()
         self._refresh_dashboard()
@@ -294,6 +304,7 @@ class MainWindow(QMainWindow):
         self.session_mgr.warning_emitted.connect(self._on_warning_emitted)
         self.session_mgr.session_started.connect(self._on_session_started)
         self.session_mgr.session_completed.connect(self._on_session_complete)
+        self.session_mgr.session_finished_normal.connect(self._on_session_finished_normal)
         self.session_mgr.status_changed.connect(self._on_status_changed)
         
         # Tray signal connections
@@ -315,6 +326,13 @@ class MainWindow(QMainWindow):
         self.content_root = QWidget()
         self.content_root.setObjectName("content_root")
         shell_l.addWidget(self.content_root)
+
+        # 4. Global Dim Overlay (covers everything for modals)
+        self.dim_overlay = QFrame(self.main_shell)
+        self.dim_overlay.setObjectName("global_dim_overlay")
+        self.dim_overlay.setStyleSheet("background-color: rgba(0, 0, 0, 0.5); border-radius: 24px;")
+        self.dim_overlay.hide()
+        self.main_shell.installEventFilter(self)
         
         self.main_layout = QVBoxLayout(self.content_root)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
@@ -473,6 +491,8 @@ class MainWindow(QMainWindow):
         
         self.active_card = QFrame()
         self.active_card.setObjectName("active_session_card")
+        self.active_card.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.active_card.installEventFilter(self)
         acl = QVBoxLayout(self.active_card)
         acl.setContentsMargins(0, 0, 0, 0)
         acl.setSpacing(0)
@@ -793,6 +813,27 @@ class MainWindow(QMainWindow):
         filter_layout.addWidget(self.hist_sort)
         
         filter_layout.addStretch()
+
+        # Import/Export buttons
+        btn_style = f"""
+            QPushButton {{
+                background: {Palette.SURFACE_WHITE};
+                border: 1px solid {Palette.SURFACE_DARK};
+                border-radius: 6px;
+                padding: 6px 14px;
+                font-size: 11px;
+                font-weight: 700;
+                color: {Palette.TEXT_SECONDARY};
+            }}
+            QPushButton:hover {{ background: {Palette.SURFACE_DARK}; color: {Palette.TEXT_PRIMARY}; }}
+        """
+        self.btn_export = QPushButton("Export CSV")
+        self.btn_export.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_export.setStyleSheet(btn_style)
+        self.btn_export.clicked.connect(self._on_export_history)
+        
+        filter_layout.addWidget(self.btn_export)
+        
         l.addLayout(filter_layout)
         
         # Column headers
@@ -847,7 +888,7 @@ class MainWindow(QMainWindow):
         self.qs_qual.v.setText(str(round(stats.get('avg_quality', 0.0), 2)))
         
         # Active Card
-        active = self.session_mgr.is_active
+        active = self.session_mgr.session is not None
         self.active_card.setVisible(active)
         self.active_empty.setVisible(not active)
         if active and self.session_mgr.session:
@@ -993,15 +1034,19 @@ class MainWindow(QMainWindow):
         self._refresh_history()
 
     def _navigate(self, key):
-        # Map segmented switcher keys to stack indexes.
-        # Note: stack order is: 0=Home, 1=History, 2=Analytics, 3=Settings, 4=Session
         idx = {"home": 0, "analytics": 2, "history": 1, "settings": 3}.get(key, 0)
         
         # Ensure data is fresh when switching to Analytics or History
         if idx == 2:
-            self.analytics_page.refresh_data()
+            try:
+                self.analytics_page.refresh_data()
+            except Exception:
+                pass
         elif idx == 1:
-            self._refresh_history()
+            try:
+                self._refresh_history()
+            except Exception:
+                pass
             
         self.stack.setCurrentIndex(idx)
 
@@ -1021,15 +1066,27 @@ class MainWindow(QMainWindow):
             next_brk = self.session_mgr.get_next_break_seconds()
             
             if s.mode == "focused":
-                self.alert_top.setText("no breaks until")
-                self.alert_bot.setText("SESSION ENDS")
+                alert_t = "no breaks until"
+                alert_b = "SESSION ENDS"
             else:
                 if next_brk: 
-                    self.alert_top.setText("next break in")
-                    self.alert_bot.setText(f"{fmt_time(next_brk)}")
+                    alert_t = "next break in"
+                    alert_b = f"{fmt_time(next_brk)}"
                 else: 
-                    self.alert_top.setText("session ends in")
-                    self.alert_bot.setText(f"{fmt_time(remaining)}")
+                    alert_t = "session ends in"
+                    alert_b = f"{fmt_time(remaining)}"
+            
+            self.alert_top.setText(alert_t)
+            self.alert_bot.setText(alert_b)
+            
+            if self.floating_window:
+                self.floating_window.update_status(
+                    s.task_name,
+                    remaining,
+                    next_brk,
+                    total,
+                    s.mode
+                )
 
     def _on_break_due(self, brk):
         """Show break window when break is due."""
@@ -1051,14 +1108,16 @@ class MainWindow(QMainWindow):
         
         try:
             # Get current streak count for the break window
-            streak_count = 0
+            streaks = self.db.get_streaks()
+            streak_count = streaks.get("session_streak").current_count if streaks.get("session_streak") else 0
             
             # Load media for the break window
             media_info = MediaManager.get_random_media(mode)
             
             # Create and show break window based on mode (parent=None for top-level)
+            settings = self.db.get_settings()
             if mode == "strict":
-                break_window = StrictBreakWindow(brk, mode, media_info=media_info, audio_mgr=self.audio, display_mgr=self.display)
+                break_window = StrictBreakWindow(brk, mode, media_info=media_info, audio_mgr=self.audio, display_mgr=self.display, settings=settings)
             elif mode == "focused":
                 # FocusEndBreakWindow needs session duration, quality score, and task name
                 session_duration = self.session_mgr.session.planned_duration_minutes if self.session_mgr.session else 60
@@ -1071,7 +1130,9 @@ class MainWindow(QMainWindow):
                     quality_score=quality_score,
                     task_name=task_name,
                     audio_mgr=self.audio,
-                    display_mgr=self.display
+                    display_mgr=self.display,
+                    settings=settings,
+                    rest_duration=brk.duration_minutes
                 )
             else:  # normal mode
                 break_window = NormalBreakWindow(brk, mode, media_info=media_info, streak_count=streak_count, audio_mgr=self.audio, display_mgr=self.display)
@@ -1102,8 +1163,7 @@ class MainWindow(QMainWindow):
         """Notify when a session starts."""
         mode_clean = session.mode.capitalize()
         self.tray.notify("Session Started", f'"{session.task_name}" in {mode_clean} mode', duration_ms=4000)
-        # Ensure we are on the Home tab (index 0) where the Active Session card is.
-        # Index 4 was a blank placeholder.
+        
         try:
             if hasattr(self, 'stack'):
                 self.stack.setCurrentIndex(0)
@@ -1113,8 +1173,31 @@ class MainWindow(QMainWindow):
             pass
         
         self._refresh_dashboard()
-        # Minimize to tray
+        
+        # Show Floating Mini Window
+        if not self.floating_window:
+            self.floating_window = FloatingSessionWindow(None) # Top level
+            self.floating_window.close_requested.connect(self._close_floating)
+            
+        self.floating_window.show()
+        
+        # Hide main window immediately
         self.hide()
+
+    def _close_floating(self):
+        if self.floating_window:
+            self.floating_window.hide()
+
+    def _on_session_complete(self, session, milestones):
+        if self.floating_window:
+            self.floating_window.close()
+            self.floating_window = None
+            
+        # Ensure we are visible to show completion
+        self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized | Qt.WindowState.WindowActive)
+        self.show()
+        self.raise_()
+        self.activateWindow()
 
     def _on_break_action(self, action: str):
         """Handle break window action."""
@@ -1127,7 +1210,15 @@ class MainWindow(QMainWindow):
             logger.error(f"Error handling break action '{action}': {e}", exc_info=True)
         
         # Keep the main window hidden while the active session continues.
-        self.hide()
+        # But if the action was 'emergency_exit' or 'taken' at the very end, 
+        # the session might be finished, so we check first.
+        if self.session_mgr.is_active:
+            self.hide()
+        else:
+            # If session ended, bring window to front
+            self.showNormal()
+            self.raise_()
+            self.activateWindow()
 
         try:
             # Send notifications based on action
@@ -1145,19 +1236,35 @@ class MainWindow(QMainWindow):
         # Main window stays hidden during active session - it will be shown when session ends
 
     def _on_session_complete(self, session, milestones):
-        # Show main window when session completes
-        self.showNormal()
+        logger.info(f"MainWindow: Handling session completion for '{getattr(session, 'task_name', 'Unknown')}'")
+        
+        # Show main window when session completes - Be aggressive to bring it to front
+        self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized | Qt.WindowState.WindowActive)
+        self.show()
         self.raise_()
         self.activateWindow()
-        self._refresh_dashboard()
         
-        # Send completion notification
-        self.tray.notify("Session Complete", f'"{session.task_name}" completed successfully!', duration_ms=5000)
-        
-        # Send milestone notifications
-        for milestone in milestones:
-            if "type" in milestone and "message" in milestone:
-                self.tray.notify("Milestone Reached!", milestone["message"], duration_ms=6000)
+        # 1. Refresh all content simultaneously with safety
+        try:
+            self._refresh_dashboard() # Refreshes Home and History
+        except Exception as e:
+            logger.error(f"Error refreshing dashboard on completion: {e}")
+
+        try:
+            if hasattr(self, 'analytics_page'):
+                self.analytics_page.refresh_data()
+        except Exception as e:
+            logger.error(f"Error refreshing analytics on completion: {e}")
+            
+        # 2. Show Celebratory Success Modal (replaces tray notification)
+        try:
+            logger.info("MainWindow: Showing SessionCompleteModal")
+            modal = SessionCompleteModal(session, milestones, self)
+            modal.exec()
+        except Exception as e:
+            logger.error(f"FATAL UI ERROR: Failed to show completion modal: {e}", exc_info=True)
+            # Fallback to tray if modal fails
+            self.tray.notify("Session Complete", f'"{getattr(session, "task_name", "Task")}" completed!')
 
     def _on_session_finished_normal(self, session):
         self.session_mgr.complete_session()
@@ -1190,6 +1297,8 @@ class MainWindow(QMainWindow):
                         duration = int(task.allocated_time_minutes)
                     except Exception:
                         duration = 60
+                if hasattr(self, 'stack'):
+                    self.stack.setCurrentIndex(0)
                 self.session_mgr.start_session(task.name, duration, task.mode, task)
                 # Minimize window to tray when session starts
                 self.hide()
@@ -1207,6 +1316,66 @@ class MainWindow(QMainWindow):
     def _toggle_max(self):
         if self.isMaximized(): self.showNormal()
         else: self.showMaximized()
+
+    def _on_export_history(self):
+        import csv
+        from PySide6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getSaveFileName(self, "Export History", "focusbreaker_history.csv", "CSV Files (*.csv)")
+        if not path: return
+        
+        sessions = self.db.get_all_sessions(limit=None)
+        try:
+            with open(path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow(["ID", "Task Name", "Mode", "Start Time", "End Time", "Planned Min", "Actual Min", "Status", "Breaks Taken", "Breaks Snoozed", "Breaks Skipped", "Quality Score"])
+                for s in sessions:
+                    writer.writerow([s.id, s.task_name, s.mode, s.start_time, s.end_time, s.planned_duration_minutes, s.actual_duration_minutes, s.status, s.breaks_taken, s.breaks_snoozed, s.breaks_skipped, s.quality_score])
+            from focusbreaker.ui.components.dialogs import ThemedMessageDialog
+            ThemedMessageDialog("Export Complete", f"Successfully exported {len(sessions)} sessions to {path}", self).exec()
+        except Exception as e:
+            from focusbreaker.ui.components.dialogs import ThemedMessageDialog
+            ThemedMessageDialog("Export Failed", f"An error occurred: {e}", self).exec()
+
+    def _on_import_history(self):
+        import csv
+        from PySide6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getOpenFileName(self, "Import History", "", "CSV Files (*.csv)")
+        if not path: return
+        
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                count = 0
+                for row in reader:
+                    # Very basic import logic - could be enhanced with validation
+                    # Note: ID is ignored to prevent collisions
+                    from focusbreaker.data.models import WorkSession
+                    s = WorkSession(
+                        task_name=row.get("Task Name", "Imported"),
+                        mode=row.get("Mode", "normal"),
+                        start_time=row.get("Start Time"),
+                        end_time=row.get("End Time"),
+                        planned_duration_minutes=int(row.get("Planned Min", 0)),
+                        actual_duration_minutes=int(row.get("Actual Min", 0)),
+                        status=row.get("Status", "completed"),
+                        breaks_taken=int(row.get("Breaks Taken", 0)),
+                        breaks_snoozed=int(row.get("Breaks Snoozed", 0)),
+                        breaks_skipped=int(row.get("Breaks Skipped", 0)),
+                        quality_score=float(row.get("Quality Score", 1.0))
+                    )
+                    # Use internal DB method if available or just raw SQL
+                    self.db.cursor.execute("""
+                        INSERT INTO work_sessions (task_name, mode, start_time, end_time, planned_duration_minutes, actual_duration_minutes, status, breaks_taken, breaks_snoozed, breaks_skipped, quality_score)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (s.task_name, s.mode, s.start_time, s.end_time, s.planned_duration_minutes, s.actual_duration_minutes, s.status, s.breaks_taken, s.breaks_snoozed, s.breaks_skipped, s.quality_score))
+                    count += 1
+                self.db.conn.commit()
+            self._on_history_filter_changed() # Refresh UI
+            from focusbreaker.ui.components.dialogs import ThemedMessageDialog
+            ThemedMessageDialog("Import Complete", f"Successfully imported {count} sessions. Your history has been updated.", self).exec()
+        except Exception as e:
+            from focusbreaker.ui.components.dialogs import ThemedMessageDialog
+            ThemedMessageDialog("Import Failed", f"An error occurred during import: {e}", self).exec()
 
     def _reposition_fab(self):
         self.fab.move(self.width() - 100, self.height() - 100)
@@ -1271,12 +1440,11 @@ class MainWindow(QMainWindow):
         event.ignore()  # Don't close the app, just hide the window
     
     def changeEvent(self, event):
-        """Minimize to tray when window is minimized."""
+        """Handle window state changes."""
         if event.type() == QEvent.Type.WindowStateChange:
-            if self.isMinimized():
-                self.hide()
-                event.ignore()
-                return
+            # Note: We no longer auto-hide to tray on minimize per user request.
+            # Standard taskbar minimization is now the default behavior.
+            pass
         super().changeEvent(event)
 
     def resizeEvent(self, event):
@@ -1292,3 +1460,22 @@ class MainWindow(QMainWindow):
         if event.buttons() & Qt.MouseButton.LeftButton:
             self.move(event.globalPosition().toPoint() - self._drag_pos)
             event.accept()
+    def show_dim(self, show: bool):
+        """Toggle the window-level dimming overlay for modals."""
+        if show:
+            self.dim_overlay.show()
+            self.dim_overlay.raise_()
+        else:
+            self.dim_overlay.hide()
+
+    def eventFilter(self, obj, event):
+        if obj == self.main_shell and event.type() == QEvent.Type.Resize:
+            if hasattr(self, 'dim_overlay'):
+                self.dim_overlay.resize(self.main_shell.size())
+        elif obj == self.active_card and event.type() == QEvent.Type.MouseButtonRelease:
+            if self.floating_window:
+                self.floating_window.show()
+                self.floating_window.raise_()
+                self.floating_window.activateWindow()
+        return super().eventFilter(obj, event)
+

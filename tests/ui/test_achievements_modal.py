@@ -28,14 +28,14 @@ def test_achievement_modal_column_breakpoint(qtbot, mock_db):
     qtbot.addWidget(modal)
 
     # Narrow window -> compact single-column layout
-    modal.resize(760, 620)
+    modal.setFixedSize(760, 620)
     modal._refresh_grid()
     assert modal._column_count_for_width(modal.width()) == 1
     assert modal.grid.getItemPosition(0)[:2] == (0, 0)
     assert modal.grid.getItemPosition(1)[:2] == (1, 0)
 
     # Wider window -> two-column layout
-    modal.resize(1100, 760)
+    modal.setFixedSize(1100, 760)
     modal._refresh_grid()
     assert modal._column_count_for_width(modal.width()) == 2
     assert modal.grid.getItemPosition(0)[:2] == (0, 0)

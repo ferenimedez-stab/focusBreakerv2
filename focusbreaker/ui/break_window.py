@@ -12,6 +12,8 @@ from PySide6.QtWidgets import (
     QWidget, QFrame, QProgressBar, QStackedWidget, QGraphicsOpacityEffect,
     QGraphicsDropShadowEffect
 )
+import logging
+logger = logging.getLogger(__name__)
 from PySide6.QtCore import Qt, QTimer, Signal, QUrl, QPoint, QPropertyAnimation, QEasingCurve, QSequentialAnimationGroup
 from PySide6.QtGui import QFont, QScreen, QGuiApplication, QPixmap, QMouseEvent, QColor, QPainter, QBrush, QPen
 from PySide6.QtMultimedia import QMediaPlayer
@@ -57,6 +59,59 @@ class BreakTheme:
         if is_scary:
             return BreakTheme.SCARY
         return random.choice(BreakTheme.VIBRANT_THEMES)
+
+# ── Activity Tips ──────────────────────────────────────────────
+
+BREAK_TIPS = [
+    "Stretch your neck and shoulders.",
+    "Look 20 feet away for 20 seconds.",
+    "Take 3 deep, mindful breaths.",
+    "Drink a glass of water.",
+    "Stand up and do a quick stretch.",
+    "Rest your eyes—blink slowly.",
+    "Roll your wrists and ankles.",
+    "Gently massage your temples.",
+    "Clench and release your fists.",
+    "Do a quick seated spinal twist."
+]
+
+class TipSlideshow(QFrame):
+    """Slideshow for recommended activities during a break."""
+    def __init__(self, theme, parent=None):
+        super().__init__(parent)
+        self.theme = theme
+        self.setObjectName("tip_container")
+        self.setFixedHeight(85)
+        self.setStyleSheet(f"""
+            QFrame#tip_container {{
+                background: {theme['card_bg']};
+                border: 1px dashed {theme['card_border']};
+                border-radius: 12px;
+            }}
+            QLabel {{ border: none; background: transparent; }}
+        """)
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(4)
+        
+        head = QLabel("TIP")
+        head.setStyleSheet(f"font-size: 9px; font-weight: 800; color: {theme['accent']}; letter-spacing: 2px;")
+        layout.addWidget(head)
+        
+        self.tip_lbl = QLabel(random.choice(BREAK_TIPS))
+        self.tip_lbl.setWordWrap(True)
+        self.tip_lbl.setStyleSheet(f"font-size: 11px; font-weight: 600; color: {theme['text']}; line-height: 130%;")
+        layout.addWidget(self.tip_lbl)
+        
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.next_tip)
+        self.timer.start(8000)
+
+    def next_tip(self):
+        current = self.tip_lbl.text()
+        options = [t for t in BREAK_TIPS if t != current]
+        self.tip_lbl.setText(random.choice(options))
 
 # ── Shared Components ──────────────────────────────────────────
 
@@ -169,10 +224,12 @@ class NormalBreakWindow(QDialog):
         self._drag_pos = None
         self.audio_mgr = audio_mgr
         self.display_mgr = display_mgr
+        self._is_taken = False
+        self._is_complete = False
         
         self.setWindowFlags(Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setFixedSize(720, 520)
+        self.setFixedSize(820, 640) # Extra room for shadows and smooth edges
         self._center()
         self._setup_ui()
         self._load_media()
@@ -203,27 +260,33 @@ class NormalBreakWindow(QDialog):
         else:
             self.media_container.set_video(path)
 
+    def _setup_animations(self):
+        """Initialize animation effects for streak badge glow."""
+        self.glow_effect = QGraphicsDropShadowEffect()
+        self.glow_effect.setBlurRadius(20)
+        self.glow_effect.setColor(QColor(self.theme['accent']))
+
     def _setup_ui(self):
         # Translucent full-window dialog with centered compact shell
-        self.setStyleSheet("QDialog { background: transparent; }")
+        self.setStyleSheet("background: transparent; border: none;")
         
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         
-        # 1. Dimmed backdrop - Perfect full-screen rectangle
+        # 1. Dimmed backdrop - Centered container
         self.backdrop = QFrame()
         self.backdrop.setObjectName("break_backdrop")
-        self.backdrop.setStyleSheet("QFrame#break_backdrop { background-color: rgba(0, 0, 0, 0.4); border: none; }")
+        self.backdrop.setStyleSheet("QFrame#break_backdrop { background-color: transparent; border: none; }")
         root.addWidget(self.backdrop)
         
         main_l = QVBoxLayout(self.backdrop)
         main_l.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        main_l.setContentsMargins(0, 0, 0, 0)
+        main_l.setContentsMargins(40, 40, 40, 40) # Space for shadow to breathe
         
         # 2. Main Shell
         self.shell = QFrame()
         self.shell.setObjectName("window_shell")
-        self.shell.setFixedSize(720, 520)
+        self.shell.setFixedSize(740, 560)
         self.shell.setStyleSheet(f"""
             QFrame#window_shell {{
                 background-color: {self.theme['bg']};
@@ -234,8 +297,8 @@ class NormalBreakWindow(QDialog):
         """)
         
         shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(40); shadow.setXOffset(0); shadow.setYOffset(15)
-        shadow.setColor(QColor(0, 0, 0, 150))
+        shadow.setBlurRadius(60); shadow.setXOffset(0); shadow.setYOffset(10)
+        shadow.setColor(QColor(0, 0, 0, 120))
         self.shell.setGraphicsEffect(shadow)
         main_l.addWidget(self.shell)
 
@@ -256,7 +319,7 @@ class NormalBreakWindow(QDialog):
         
         # ── Side Pane ──
         self.side_pane = QFrame()
-        self.side_pane.setFixedWidth(240)
+        self.side_pane.setFixedWidth(260)
         self.side_pane.setStyleSheet(f"background: {self.theme['side_bg']}; border-top-right-radius: 24px; border-bottom-right-radius: 24px; border: none;")
         sl = QVBoxLayout(self.side_pane)
         sl.setContentsMargins(24, 32, 24, 32)
@@ -272,12 +335,25 @@ class NormalBreakWindow(QDialog):
         
         # Streak Card
         self.streak_box = QFrame()
-        self.streak_box.setStyleSheet(f"background: {self.theme['card_bg']}; border: 1.5px solid {self.theme['card_border']}; border-radius: 12px; padding: 12px;")
+        self.streak_box.setObjectName("streak_card")
+        self.streak_box.setStyleSheet(f"""
+            QFrame#streak_card {{
+                background-color: {self.theme['card_bg']};
+                border: 1.5px solid {self.theme['card_border']};
+                border-radius: 16px;
+            }}
+        """)
         sbl = QHBoxLayout(self.streak_box)
-        st_num = QLabel(f"🔥 {self._streak_count}")
-        st_num.setStyleSheet(f"font-size: 24px; font-weight: 800; color: {self.theme['text']}; border: none;")
-        sbl.addWidget(st_num); sbl.addStretch()
-        st_lab = QLabel("STREAK"); st_lab.setStyleSheet(f"font-size: 9px; font-weight: 700; color: {self.theme['muted']}; border: none;")
+        sbl.setContentsMargins(16, 12, 16, 12)
+        
+        st_num = QLabel(f"🔥 {getattr(self, '_streak_count', 0)}")
+        st_num.setStyleSheet(f"font-size: 22px; font-weight: 800; color: {self.theme['text']}; background: transparent; border: none;")
+        sbl.addWidget(st_num)
+        
+        sbl.addStretch()
+        
+        st_lab = QLabel("STREAK")
+        st_lab.setStyleSheet(f"font-size: 10px; font-weight: 800; color: {self.theme['muted']}; background: transparent; border: none; letter-spacing: 1px;")
         sbl.addWidget(st_lab)
         sl.addWidget(self.streak_box)
         
@@ -292,7 +368,7 @@ class NormalBreakWindow(QDialog):
         rem_lbl.setStyleSheet(f"font-size: 9px; font-weight: 800; color: {self.theme['muted']}; border: none;")
         sl.addWidget(rem_lbl, alignment=Qt.AlignmentFlag.AlignCenter)
         
-        sl.addSpacing(20)
+        sl.addSpacing(16)
         
         # Snooze Passes
         pass_l = QHBoxLayout(); pass_l.setSpacing(8); pass_l.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -302,25 +378,56 @@ class NormalBreakWindow(QDialog):
             pass_l.addWidget(d); self.pass_dots.append(d)
         sl.addLayout(pass_l)
         
+        sl.addSpacing(16)
+        
+        # Activity Tip (Initially hidden until 'TAKE' clicked)
+        self.tip_box = TipSlideshow(self.theme)
+        self.tip_box.hide()
+        sl.addWidget(self.tip_box)
+        
         sl.addStretch()
         
         # Action Buttons
-        self.take_btn = QPushButton("DONE")
+        self.take_btn = QPushButton("TAKE")
         self.take_btn.setFixedHeight(48)
         self.take_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.take_btn.setStyleSheet(f"background: {self.theme['accent']}; color: white; border-radius: 24px; font-weight: 800; font-size: 13px; border: none;")
+        self.take_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {self.theme['accent']};
+                color: white;
+                border-radius: 24px;
+                font-weight: 800;
+                font-size: 13px;
+                border: none;
+            }}
+            QPushButton:hover {{
+                background-color: {self.theme['text']};
+            }}
+        """)
         self.take_btn.clicked.connect(self._on_take_break)
         sl.addWidget(self.take_btn)
         
         self.snooze_btn = QPushButton("SNOOZE")
         self.snooze_btn.setFixedHeight(40)
         self.snooze_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.snooze_btn.setStyleSheet(f"border: 2px solid {self.theme['card_border']}; color: {self.theme['accent']}; border-radius: 20px; font-weight: 700; font-size: 12px; background: transparent;")
+        self.snooze_btn.setStyleSheet(f"""
+            QPushButton {{
+                border: 2px solid {self.theme['card_border']};
+                color: {self.theme['accent']};
+                border-radius: 20px;
+                font-weight: 700;
+                font-size: 12px;
+                background: transparent;
+            }}
+            QPushButton:hover {{
+                background: {self.theme['card_bg']};
+            }}
+        """)
         self.snooze_btn.clicked.connect(self._on_snooze_clicked)
         sl.addWidget(self.snooze_btn)
         
         self.skip_btn = QPushButton("SKIP")
-        self.skip_btn.setStyleSheet(f"color: {self.theme['muted']}; font-weight: 600; font-size: 11px; background: transparent; border: none;")
+        self.skip_btn.setStyleSheet(f"color: {self.theme['muted']}; font-weight: 700; font-size: 11px; background: transparent; border: none; padding: 10px;")
         self.skip_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.skip_btn.clicked.connect(self._on_skip_clicked)
         sl.addWidget(self.skip_btn, alignment=Qt.AlignmentFlag.AlignCenter)
@@ -350,7 +457,17 @@ class NormalBreakWindow(QDialog):
 
     def mouseMoveEvent(self, event: QMouseEvent):
         if self._drag_pos:
-            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            new_pos = event.globalPosition().toPoint() - self._drag_pos
+            
+            # Constrain movement within visible screen space
+            screen = QGuiApplication.primaryScreen().availableGeometry()
+            
+            # Left/Right bounds
+            x = max(screen.left(), min(new_pos.x(), screen.right() - self.width()))
+            # Top/Bottom bounds
+            y = max(screen.top(), min(new_pos.y(), screen.bottom() - self.height()))
+            
+            self.move(x, y)
             event.accept()
 
     def mouseReleaseEvent(self, event: QMouseEvent):
@@ -384,6 +501,8 @@ class NormalBreakWindow(QDialog):
             self._show_complete_state()
 
     def _show_complete_state(self):
+        logger.info("NormalBreakWindow: Break timer finished. Showing complete state.")
+        self._is_complete = True
         self.timer.stop()
         self.media_container.stop()
         
@@ -391,13 +510,26 @@ class NormalBreakWindow(QDialog):
         self.timer_lbl.setText("RESTED")
         self.timer_lbl.setStyleSheet(f"font-size: 32px; font-weight: 800; color: {self.theme['accent']};")
         self.take_btn.setText("RESUME WORK")
+        self.take_btn.show() 
         self.snooze_btn.hide()
         self.skip_btn.hide()
         
-        QTimer.singleShot(3000, lambda: self._finish("taken"))
+        # Auto-finish after 5 seconds if no interaction
+        QTimer.singleShot(5000, self._auto_finish)
+
+    def _auto_finish(self):
+        if self._is_complete:
+            self._finish("taken")
 
     def _on_take_break(self):
-        self._finish("taken")
+        """User commits to the break. Hide take button, show tips, but window stays."""
+        if self._is_complete:
+            self._finish("taken")
+            return
+            
+        self._is_taken = True
+        self.take_btn.hide()
+        self.tip_box.show()
 
     def _on_snooze_clicked(self):
         self._show_snooze_confirmation()
@@ -425,6 +557,7 @@ class NormalBreakWindow(QDialog):
             self._finish("skipped")
 
     def _finish(self, action):
+        logger.info(f"NormalBreakWindow: Finishing with action='{action}'")
         self.timer.stop()
         self.media_container.stop()
         self.action_taken.emit(action)
@@ -444,8 +577,9 @@ class StrictBreakWindow(QDialog):
     """Full-screen enforced break with the 'scary' dark theme."""
     action_taken = Signal(str)
     
-    def __init__(self, brk: Break, mode: str, media_info=None, audio_mgr=None, display_mgr=None, parent=None):
+    def __init__(self, brk: Break, mode: str, media_info=None, audio_mgr=None, display_mgr=None, parent=None, settings=None):
         super().__init__(parent)
+        self.settings = settings
         self.brk = brk
         self.mode = mode
         self.media_info = media_info or {}
@@ -546,6 +680,12 @@ class StrictBreakWindow(QDialog):
         
         sl.addStretch()
         
+        # Activity Tip Slideshow
+        self.tips = TipSlideshow(self.theme, self)
+        sl.addWidget(self.tips)
+        
+        sl.addStretch()
+        
         notice = QLabel("SESSIONS ARE LOCKED\nUNTIL REST COMPLETE")
         notice.setStyleSheet(f"color: {self.theme['muted']}; font-size: 11px; font-weight: 700; text-align: center; border: none;")
         sl.addWidget(notice, alignment=Qt.AlignmentFlag.AlignCenter)
@@ -565,7 +705,13 @@ class StrictBreakWindow(QDialog):
         main_l.addWidget(side)
 
     def _setup_escape_hatch(self):
-        self.escape_hatch = EscapeHatch(parent=self)
+        if self.settings and not getattr(self.settings, 'escape_hatch_enabled', True):
+            return
+            
+        combo = getattr(self.settings, 'escape_hatch_combo', "ctrl+alt+shift+e")
+        duration = getattr(self.settings, 'escape_hatch_duration', 3.0)
+            
+        self.escape_hatch = EscapeHatch(combo=combo, hold_duration=duration, parent=self)
         self.escape_hatch.progress.connect(self._on_escape_progress)
         self.escape_hatch.triggered.connect(self._on_escape_triggered)
         self.escape_hatch.start_listening()
@@ -615,11 +761,12 @@ class FocusEndBreakWindow(QDialog):
     """Full-screen summary and rest window with dynamic theme."""
     action_taken = Signal(str)
     
-    def __init__(self, session_duration: int, mode: str = "focused", media_info=None, quality_score=1.0, task_name="", audio_mgr=None, display_mgr=None, parent=None):
+    def __init__(self, session_duration: int, mode: str = "focused", media_info=None, quality_score=1.0, task_name="", audio_mgr=None, display_mgr=None, parent=None, settings=None, rest_duration: int = 0):
         super().__init__(parent)
+        self.settings = settings
         self.mode = mode
         self.media_info = media_info or {}
-        self.theme = BreakTheme.get_theme(mode, self.media_info.get('name', ''))
+        self.theme = BreakTheme.SCARY
         
         self.audio_mgr = audio_mgr
         self.display_mgr = display_mgr
@@ -627,9 +774,12 @@ class FocusEndBreakWindow(QDialog):
         self.quality_score = quality_score
         self.task_name = task_name
         
-        if session_duration <= 120: self.rest_duration = 30
-        elif session_duration <= 240: self.rest_duration = 45
-        else: self.rest_duration = 60
+        if rest_duration > 0:
+            self.rest_duration = rest_duration
+        else:
+            if session_duration <= 120: self.rest_duration = 30
+            elif session_duration <= 240: self.rest_duration = 45
+            else: self.rest_duration = 60
         
         self.total_secs = self.rest_duration * 60
         self._elapsed = 0
@@ -639,8 +789,21 @@ class FocusEndBreakWindow(QDialog):
         self._setup_ui()
         self._load_media()
         self._trigger_audio_and_brightness()
+        self._setup_recording_animation()
         self._setup_escape_hatch()
         self._start_timer()
+
+    def _setup_recording_animation(self):
+        self.recording_timer = QTimer(self)
+        self.recording_timer.timeout.connect(self._update_recording)
+        self.recording_timer.start(50)
+        self._rec_alpha = 255
+        self._rec_dir = -5
+
+    def _update_recording(self):
+        self._rec_alpha += self._rec_dir
+        if self._rec_alpha <= 50 or self._rec_alpha >= 255: self._rec_dir *= -1
+        self.rec_dot.setStyleSheet(f"background: rgba(255, 68, 68, {self._rec_alpha}); border-radius: 4px;")
 
     def _load_media(self):
         path = self.media_info.get('path')
@@ -661,56 +824,70 @@ class FocusEndBreakWindow(QDialog):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         
+        # Backdrop
         self.backdrop = QFrame()
         self.backdrop.setObjectName("focus_backdrop")
-        self.backdrop.setStyleSheet(f"QFrame#focus_backdrop {{ background: {self.theme['bg']}; border: none; }}")
+        self.backdrop.setStyleSheet(f"QFrame#focus_backdrop {{ background-color: {self.theme['bg']}; border: none; }}")
         root.addWidget(self.backdrop)
         
         main_l = QHBoxLayout(self.backdrop)
         main_l.setContentsMargins(0, 0, 0, 0); main_l.setSpacing(0)
         
+        # ── Media Pane (Left) ──
+        media_pane = QVBoxLayout()
+        media_pane.setContentsMargins(0, 0, 0, 0)
         self.media_container = MediaContainer()
         self.media_container.setStyleSheet("background: #000; border: none;")
-        main_l.addWidget(self.media_container, 1)
+        media_pane.addWidget(self.media_container, 1)
         
-        side = QFrame(); side.setFixedWidth(260)
-        side.setStyleSheet(f"background: {self.theme['side_bg']}; border: none;")
-        sl = QVBoxLayout(side); sl.setContentsMargins(24, 40, 24, 40); sl.setSpacing(20)
+        self.progress_strip = CustomProgressStrip(direction="right_to_left", color=self.theme['accent'])
+        media_pane.addWidget(self.progress_strip)
+        main_l.addLayout(media_pane, 1)
         
-        head = QLabel("SESSION COMPLETE")
-        head.setStyleSheet(f"color: {self.theme['accent']}; font-size: 10px; font-weight: 800; letter-spacing: 2px; border: none;")
-        sl.addWidget(head)
+        # ── Side Pane (Right) ──
+        self.side_pane = QFrame()
+        self.side_pane.setFixedWidth(240)
+        self.side_pane.setStyleSheet(f"background: {self.theme['side_bg']}; border: none;")
+        sl = QVBoxLayout(self.side_pane); sl.setContentsMargins(24, 40, 24, 40); sl.setSpacing(20)
         
-        title = QLabel(self.task_name if self.task_name else "Great Work")
-        title.setStyleSheet(f"font-size: 18px; font-weight: 800; color: {self.theme['text']}; border: none; background: transparent;")
-        title.setWordWrap(True); sl.addWidget(title)
-        
-        # Summary Card
-        sum_card = QFrame()
-        sum_card.setStyleSheet(f"background: {self.theme['card_bg']}; border: 1.5px solid {self.theme['card_border']}; border-radius: 12px; padding: 16px;")
-        scl = QVBoxLayout(sum_card); scl.setSpacing(10)
-        
-        qual_val = int(self.quality_score * 100)
-        q_lbl = QLabel("QUALITY SCORE")
-        q_lbl.setStyleSheet(f"font-size: 9px; font-weight: 700; color: {self.theme['muted']}; border: none;")
-        q_num = QLabel(f"{qual_val}%")
-        q_num.setStyleSheet(f"font-size: 32px; font-weight: 800; color: {self.theme['text']}; border: none;")
-        scl.addWidget(q_lbl); scl.addWidget(q_num)
-        
-        prog = QProgressBar(); prog.setRange(0, 100); prog.setValue(qual_val); prog.setFixedHeight(4); prog.setTextVisible(False)
-        prog.setStyleSheet(f"QProgressBar {{ background: rgba(0,0,0,0.1); border: none; }} QProgressBar::chunk {{ background: {self.theme['accent']}; }}")
-        scl.addWidget(prog)
-        sl.addWidget(sum_card)
+        rec_l = QHBoxLayout()
+        rec_l.setContentsMargins(0, 0, 0, 0)
+        self.rec_dot = QFrame(); self.rec_dot.setFixedSize(8, 8)
+        rec_l.addWidget(self.rec_dot)
+        rec_txt = QLabel("FOCUS COMPLETE"); rec_txt.setStyleSheet(f"color: {self.theme['accent']}; font-size: 10px; font-weight: 800; letter-spacing: 1px; border: none;")
+        rec_l.addWidget(rec_txt); rec_l.addStretch()
+        sl.addLayout(rec_l)
         
         sl.addStretch()
         
         self.timer_lbl = QLabel(fmt_time(self.total_secs))
-        self.timer_lbl.setStyleSheet(f"font-family: 'JetBrains Mono'; font-size: 42px; font-weight: 800; color: {self.theme['accent']}; border: none;")
+        self.timer_lbl.setStyleSheet(f"font-family: 'JetBrains Mono'; font-size: 48px; font-weight: 800; color: white; border: none;")
         sl.addWidget(self.timer_lbl, alignment=Qt.AlignmentFlag.AlignCenter)
         
         rem_rest = QLabel("REMAINING REST")
-        rem_rest.setStyleSheet(f"font-size: 10px; font-weight: 700; color: {self.theme['muted']}; border: none;")
+        rem_rest.setStyleSheet(f"font-size: 10px; font-weight: 800; color: {self.theme['muted']}; border: none;")
         sl.addWidget(rem_rest, alignment=Qt.AlignmentFlag.AlignCenter)
+        
+        sl.addStretch()
+        
+        # Summary Card (Small version to fit sidebar)
+        qual_val = int(self.quality_score * 100)
+        q_box = QFrame()
+        q_box.setStyleSheet(f"background: {self.theme['card_bg']}; border: 1.5px solid {self.theme['card_border']}; border-radius: 12px; padding: 12px;")
+        q_l = QVBoxLayout(q_box); q_l.setSpacing(4)
+        q_t = QLabel(f"QUALITY: {qual_val}%")
+        q_t.setStyleSheet(f"font-size: 10px; font-weight: 800; color: white; border: none;")
+        q_l.addWidget(q_t)
+        qp = QProgressBar(); qp.setRange(0, 100); qp.setValue(qual_val); qp.setFixedHeight(3); qp.setTextVisible(False)
+        qp.setStyleSheet(f"QProgressBar {{ background: rgba(0,0,0,0.2); border: none; }} QProgressBar::chunk {{ background: {self.theme['accent']}; }}")
+        q_l.addWidget(qp)
+        sl.addWidget(q_box)
+        
+        sl.addStretch()
+        
+        # Activity Tip Slideshow
+        self.tips = TipSlideshow(self.theme, self)
+        sl.addWidget(self.tips)
         
         sl.addStretch()
         
@@ -719,15 +896,20 @@ class FocusEndBreakWindow(QDialog):
         sl.addWidget(self.escape_label, alignment=Qt.AlignmentFlag.AlignCenter)
         
         self.escape_progress = QProgressBar()
-        self.escape_progress.setRange(0, 100); self.escape_progress.setValue(0); self.escape_progress.setFixedHeight(2); self.escape_progress.setTextVisible(False)
-        self.escape_progress.setStyleSheet(f"QProgressBar {{ background: rgba(0,0,0,0.05); border: none; }} QProgressBar::chunk {{ background: {self.theme['accent']}; }}")
+        self.escape_progress.setRange(0, 100); self.escape_progress.setValue(0); self.escape_progress.setFixedHeight(3); self.escape_progress.setTextVisible(False)
+        self.escape_progress.setStyleSheet(f"QProgressBar {{ background: rgba(255,255,255,0.05); border: none; }} QProgressBar::chunk {{ background: {self.theme['accent']}; }}")
         self.escape_progress.hide()
         sl.addWidget(self.escape_progress)
-        
-        main_l.addWidget(side)
+        main_l.addWidget(self.side_pane)
 
     def _setup_escape_hatch(self):
-        self.escape_hatch = EscapeHatch(parent=self)
+        if self.settings and not getattr(self.settings, 'escape_hatch_enabled', True):
+            return
+            
+        combo = getattr(self.settings, 'escape_hatch_combo', "ctrl+alt+shift+e")
+        duration = getattr(self.settings, 'escape_hatch_duration', 3.0)
+            
+        self.escape_hatch = EscapeHatch(combo=combo, hold_duration=duration, parent=self)
         self.escape_hatch.progress.connect(self._on_escape_progress)
         self.escape_hatch.triggered.connect(self._on_escape_triggered)
         self.escape_hatch.start_listening()
@@ -737,7 +919,7 @@ class FocusEndBreakWindow(QDialog):
         self.escape_progress.setValue(int(val * 100))
 
     def _on_escape_triggered(self):
-        self.timer.stop(); self.media_container.stop()
+        self.timer.stop(); self.recording_timer.stop(); self.media_container.stop()
         self.action_taken.emit("emergency_exit")
         self.accept()
 
@@ -748,10 +930,14 @@ class FocusEndBreakWindow(QDialog):
         self._elapsed += 1
         remaining = max(0, self.total_secs - self._elapsed)
         self.timer_lbl.setText(fmt_time(remaining))
+        
+        progress_val = int((remaining / self.total_secs) * 100) if self.total_secs > 0 else 0
+        self.progress_strip.set_value(progress_val)
+        
         if remaining <= 0: self._finish_rest()
 
     def _finish_rest(self):
-        self.timer.stop(); self.media_container.stop()
+        self.timer.stop(); self.recording_timer.stop(); self.media_container.stop()
         self.action_taken.emit("taken")
         self.accept()
 

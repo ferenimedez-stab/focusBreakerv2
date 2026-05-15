@@ -12,6 +12,28 @@ class Scheduler:
         import logging
         logger = logging.getLogger("FocusBreaker")
 
+        if mode == "focused":
+            # Focused mode: one break at the very end
+            brk_dur = settings.focused_mandatory_break
+            if duration_minutes >= 240:
+                brk_dur = 60
+            elif duration_minutes >= 120:
+                brk_dur = 45
+            
+            # If task has manual duration, respect it
+            if task and not task.auto_calculate_breaks:
+                brk_dur = task.manual_break_duration
+
+            logger.info(f"Scheduler: Using FOCUSED break - duration={brk_dur}min at end")
+                
+            b = Break(
+                session_id=session_id,
+                scheduled_offset_minutes=duration_minutes,
+                duration_minutes=brk_dur
+            )
+            breaks.append(b)
+            return breaks
+
         if task and not task.auto_calculate_breaks and task.manual_break_count > 0:
             count = task.manual_break_count
             brk_dur = task.manual_break_duration
@@ -60,23 +82,8 @@ class Scheduler:
                 breaks.append(b)
                 offset += interval + brk_dur
                 
-        elif mode == "focused":
-            # Focused mode: one break at the very end
-            # Scaling logic is also handled in ModeController.get_mandatory_cooldown
-            # but for initial scheduling we use the settings default.
-            brk_dur = settings.focused_mandatory_break
-            if duration_minutes >= 240:
-                brk_dur = 60
-            elif duration_minutes >= 120:
-                brk_dur = 45
-            logger.info(f"Scheduler: Using AUTO FOCUSED break - duration={brk_dur}min at end")
-                
-            b = Break(
-                session_id=session_id,
-                scheduled_offset_minutes=duration_minutes,
-                duration_minutes=brk_dur
-            )
-            breaks.append(b)
+        # Note: Focused mode handled at the top
+        pass
             
         logger.info(f"Scheduler: Total breaks created: {len(breaks)}")
         return breaks

@@ -1,5 +1,15 @@
-import keyboard
 from typing import List, Optional
+
+# Lazy-load keyboard to avoid Windows import hang
+_keyboard = None
+
+def _get_keyboard():
+    """Lazy-load keyboard module."""
+    global _keyboard
+    if _keyboard is None:
+        import keyboard
+        _keyboard = keyboard
+    return _keyboard
 
 class InputBlocker:
     """
@@ -21,6 +31,7 @@ class InputBlocker:
             
         # We use a global hook to suppress all keys.
         # Note: This is a powerful feature and requires appropriate permissions.
+        keyboard = _get_keyboard()
         keyboard.hook(self._handle_key_event, suppress=True)
         self._is_blocking = True
         self._hooked = True
@@ -28,6 +39,7 @@ class InputBlocker:
     def stop_blocking(self):
         """Stops blocking keys."""
         if self._hooked:
+            keyboard = _get_keyboard()
             keyboard.unhook(self._handle_key_event)
             self._hooked = False
         self._is_blocking = False

@@ -2,7 +2,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QScrollArea, QGridLayout, QWidget, QProgressBar, QSizePolicy, QSpacerItem
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QPoint
 from focusbreaker.config import Palette, Colors
 from focusbreaker.data.db import DBManager
 
@@ -136,11 +136,36 @@ class AchievementsModal(QDialog):
         self._achievements_data = get_achievements_config(self._stats)
         self._grid_columns = 2
         
-        self._setup_ui()
-        
+        # Increase dimension if parent is maximized (by 1/4 more than previous 960x780)
+        if parent and parent.isMaximized():
+            self.setFixedSize(1200, 980)
+        else:
+            self.setFixedSize(820, 680)
+
+        # Center on parent
         if parent:
-            self.resize(parent.size())
-            self.move(parent.mapToGlobal(parent.rect().topLeft()))
+            self.move(parent.geometry().center() - self.rect().center())
+            
+        self._drag_pos = QPoint()
+        self._setup_ui()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() & Qt.MouseButton.LeftButton:
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            event.accept()
+
+    def exec(self):
+        if self.parent() and hasattr(self.parent(), "show_dim"):
+            self.parent().show_dim(True)
+        res = super().exec()
+        if self.parent() and hasattr(self.parent(), "show_dim"):
+            self.parent().show_dim(False)
+        return res
 
     def _column_count_for_width(self, width):
         """Determine number of columns based on window width."""
@@ -153,19 +178,8 @@ class AchievementsModal(QDialog):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         
-        self.backdrop = QFrame()
-        self.backdrop.setObjectName("backdrop")
-        self.backdrop.setStyleSheet("QFrame#backdrop { background-color: rgba(0, 0, 0, 0.4); border-radius: 24px; }")
-        root.addWidget(self.backdrop)
-
-        container_outer = QVBoxLayout(self.backdrop)
-        container_outer.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        container_outer.setContentsMargins(40, 40, 40, 40)
-
         self.container = QFrame()
         self.container.setObjectName("modal_container")
-        self.container.setFixedWidth(820)
-        self.container.setMaximumHeight(680)
         self.container.setStyleSheet(f"""
             QFrame#modal_container {{ 
                 background-color: {Palette.SURFACE_DEFAULT}; 
@@ -173,7 +187,7 @@ class AchievementsModal(QDialog):
                 border: 1px solid {Palette.SURFACE_DARK}; 
             }}
         """)
-        container_outer.addWidget(self.container)
+        root.addWidget(self.container)
 
         l = QVBoxLayout(self.container)
         l.setContentsMargins(0, 0, 0, 0)

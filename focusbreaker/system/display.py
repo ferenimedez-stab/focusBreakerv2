@@ -1,7 +1,17 @@
-import screen_brightness_control as sbc
 from PySide6.QtCore import QObject, Signal, QTimer, Qt
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
 from PySide6.QtGui import QColor, QPalette
+
+# Lazy-load screen_brightness_control to avoid Windows import hang
+_sbc = None
+
+def _get_sbc():
+    """Lazy-load screen_brightness_control module."""
+    global _sbc
+    if _sbc is None:
+        import screen_brightness_control as sbc
+        _sbc = sbc
+    return _sbc
 
 class DisplayController(QObject):
     """
@@ -10,6 +20,7 @@ class DisplayController(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         try:
+            sbc = _get_sbc()
             brightness = sbc.get_brightness()
             # sbc.get_brightness() returns a list, e.g., [74]
             if isinstance(brightness, list) and len(brightness) > 0:
@@ -24,6 +35,7 @@ class DisplayController(QObject):
     def boost_brightness(self, level: int = 100):
         """Boosts screen brightness during surprise effects."""
         try:
+            sbc = _get_sbc()
             sbc.set_brightness(level)
         except Exception:
             pass
@@ -31,6 +43,7 @@ class DisplayController(QObject):
     def restore_brightness(self):
         """Restores original screen brightness."""
         try:
+            sbc = _get_sbc()
             # Ensure we pass an int/float, not a list
             val = self.original_brightness
             if isinstance(val, list):

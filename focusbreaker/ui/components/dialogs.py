@@ -1,5 +1,5 @@
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QApplication
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QApplication, QGraphicsOpacityEffect
+from PySide6.QtCore import Qt, QPropertyAnimation
 from focusbreaker.config import Palette
 
 class ThemedConfirmDialog(QDialog):
@@ -11,40 +11,19 @@ class ThemedConfirmDialog(QDialog):
         self.setModal(True)
         self.result_value = False
         
-        # Geometry logic: Cover the active visible context (important for tray actions)
-        from PySide6.QtWidgets import QApplication
-        target = parent
-        # If parent is hidden or not provided, try to find the actual visible window (e.g. BreakWindow)
-        if not target or not target.isVisible():
-            target = QApplication.activeWindow()
+        self.setFixedSize(400, 240)
+        # Center on parent
+        if parent:
+            self.move(parent.geometry().center() - self.rect().center())
             
-        if target and target.isVisible():
-            self.resize(target.size())
-            self.move(target.mapToGlobal(target.rect().topLeft()))
-        else:
-            # Fallback if no window is visible (though unlikely if user clicked tray)
-            screen = QApplication.primaryScreen().geometry()
-            self.resize(screen.size())
-            self.move(screen.topLeft())
-        
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         
-        # Dim backdrop - cover entire dialog
-        self.backdrop = QFrame()
-        self.backdrop.setObjectName("confirm_backdrop")
-        self.backdrop.setStyleSheet(f"QFrame#confirm_backdrop {{ background-color: rgba(0, 0, 0, 0.4); border-radius: 24px; border: none; }}")
-        root.addWidget(self.backdrop)
-        
-        container_l = QVBoxLayout(self.backdrop)
-        container_l.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        container_l.setContentsMargins(0, 0, 0, 0)
-        
+        # Modal Shell
         self.container = QFrame()
         self.container.setObjectName("confirm_shell")
-        self.container.setFixedWidth(400)
-        self.container.setStyleSheet(f"QFrame#confirm_shell {{ background-color: {Palette.SURFACE_WHITE}; border-radius: 20px; border: 1px solid {Palette.SURFACE_DARK}; }}")
-        container_l.addWidget(self.container)
+        self.container.setStyleSheet(f"QFrame#confirm_shell {{ background-color: {Palette.SURFACE_WHITE}; border-radius: 20px; border: 1.5px solid {Palette.SURFACE_DARK}; }}")
+        root.addWidget(self.container)
         
         l = QVBoxLayout(self.container)
         l.setContentsMargins(32, 32, 32, 32)

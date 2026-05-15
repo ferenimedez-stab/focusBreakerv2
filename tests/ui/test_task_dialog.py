@@ -19,7 +19,7 @@ def test_task_dialog_initial_state(qtbot, mock_db):
     qtbot.addWidget(dialog)
     
     assert dialog.windowTitle() == "" # Frameless
-    assert dialog.selected_mode == "normal"
+    assert dialog.task_data['mode'] == "normal"
 
 def test_task_dialog_input_validation(qtbot, mock_db):
     dialog = TaskDialog(mock_db)

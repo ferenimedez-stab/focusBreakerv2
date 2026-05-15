@@ -3,18 +3,30 @@ import os
 import logging
 from logging import INFO, FileHandler, StreamHandler
 
+print("[DEBUG] Starting imports...", flush=True)
+
 # Ensure project root is in path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+print("[DEBUG] Importing PySide6...", flush=True)
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QFont, QPalette, QColor, QIcon, QFontDatabase
+from PySide6.QtCore import Qt, QTimer
 
+print("[DEBUG] Importing focusbreaker modules...", flush=True)
+print("[DEBUG] - Importing DBManager...", flush=True)
 from focusbreaker.data.db import DBManager
+print("[DEBUG] - Importing MainWindow...", flush=True)
 from focusbreaker.ui.main_window import MainWindow
+print("[DEBUG] - Importing SplashScreen...", flush=True)
 from focusbreaker.ui.splash_screen import SplashScreen
+print("[DEBUG] - Importing FirstTimeSetupDialog...", flush=True)
 from focusbreaker.ui.setup_dialog import FirstTimeSetupDialog
+print("[DEBUG] - Importing config...", flush=True)
 from focusbreaker.config import Colors, AppPaths
+print("[DEBUG] - Importing hot_reload...", flush=True)
 from focusbreaker.core.hot_reload import HotReloadWatcher, trigger_hot_reload
+print("[DEBUG] All imports complete!", flush=True)
 
 
 def ensure_directories():
@@ -67,19 +79,26 @@ def load_fonts():
 
 
 def main():
+    print("[DEBUG] main() starting...", flush=True)
     ensure_directories()
+    print("[DEBUG] Directories ensured...", flush=True)
     logger = init_logging()
+    print("[DEBUG] Logging initialized...", flush=True)
     logger.info("Application starting...")
 
+    print("[DEBUG] Creating QApplication...", flush=True)
     app = QApplication(sys.argv)
+    print("[DEBUG] QApplication created!", flush=True)
     hot_reload_watcher: HotReloadWatcher | None = None
     app.setStyle("Fusion") # Fixes many rendering bugs with tooltips on Windows
     app.setApplicationName("focusBreaker")
     app.setApplicationVersion("1.0.0")
     app.setQuitOnLastWindowClosed(False)  # Keep app running in background with tray icon
     
+    print("[DEBUG] Loading fonts...", flush=True)
     load_fonts()
     
+    print("[DEBUG] Setting up UI styling...", flush=True)
     # Taskbar Logo handling for Windows
     from focusbreaker.config import UIConfig
     if os.path.exists(UIConfig.LOGO_PATH):
@@ -110,53 +129,92 @@ def main():
     from focusbreaker.ui.styles import get_stylesheet
     app.setStyleSheet(get_stylesheet())
 
+    print("[DEBUG] Connecting to database...", flush=True)
     db = DBManager()
     db.connect()
+    print("[DEBUG] Database connected!", flush=True)
 
+    print("[DEBUG] Creating splash screen...", flush=True)
     # Step 3: Splash Screen
     splash = SplashScreen()
+    print("[DEBUG] Showing splash screen...", flush=True)
     splash.show()
+    print("[DEBUG] Splash screen shown!", flush=True)
     
     def on_loading_finished():
         nonlocal hot_reload_watcher
-        logger.info("Loading finished, preparing main interface...")
-        splash.close()
-        
-        # Step 6: First Time Setup Check
-        if db.is_first_run():
-            logger.info("First run detected, showing setup dialog.")
-            setup = FirstTimeSetupDialog()
-            if setup.exec():
-                settings = db.get_settings()
-                settings.username = setup.get_username()
-                db.save_settings(settings)
-                db.complete_first_run()
-                logger.info(f"Setup complete. Username: {settings.username}")
-        
-        # Step 7: Show Main Window
-        window = MainWindow(db)
-        window.show()
-        window.showNormal()
-        window.raise_()
-        window.activateWindow()
-        # Keep a reference to the main window
-        global _main_window
-        _main_window = window
-        logger.info("Main window displayed.")
-        
-        # Step 8: Setup Hot Reload for Development
-        # Set DEV_MODE=1 environment variable to enable hot reload
-        dev_mode = os.environ.get('DEV_MODE', '').lower() in ('1', 'true', 'yes')
-        if dev_mode:
-            focusbreaker_dir = os.path.dirname(os.path.abspath(__file__))
-            hot_reload_watcher = HotReloadWatcher(focusbreaker_dir, enable=True)
-            hot_reload_watcher.start(trigger_hot_reload)
-            logger.info("Hot reload enabled - changes to .py files will trigger restart")
+        try:
+            print("[DEBUG] on_loading_finished() called", flush=True)
+            logger.info("Loading finished, preparing main interface...")
+            splash.close()
+            print("[DEBUG] Splash closed", flush=True)
+            
+            # Step 6: First Time Setup Check
+            if db.is_first_run():
+                print("[DEBUG] First run detected, showing setup dialog", flush=True)
+                logger.info("First run detected, showing setup dialog.")
+                setup = FirstTimeSetupDialog()
+                if setup.exec():
+                    settings = db.get_settings()
+                    settings.username = setup.get_username()
+                    db.save_settings(settings)
+                    db.complete_first_run()
+                    logger.info(f"Setup complete. Username: {settings.username}")
+                print("[DEBUG] Setup dialog complete", flush=True)
+            
+            # Step 7: Show Main Window
+            print("[DEBUG] Creating MainWindow...", flush=True)
+            window = MainWindow(db)
+            
+            # Keep a reference to the main window
+            global _main_window
+            _main_window = window
+            
+            # Ensure window starts in a normal state and show it
+            window.setWindowState(Qt.WindowState.WindowNoState)
+            window.show()
+            print("[DEBUG] window.show() called", flush=True)
+            
+            # Force focus and "pop out" behavior
+            window.raise_()
+            window.activateWindow()
+            
+            # Extra insurance: ensure it's normal state after showing
+            QTimer.singleShot(200, lambda: (
+                window.showNormal(),
+                window.raise_(),
+                window.activateWindow()
+            ))
+            
+            logger.info("Main window displayed.")
+            print("[DEBUG] Main window ready", flush=True)
+            
+            # Step 8: Setup Hot Reload for Development
+            # Set DEV_MODE=1 environment variable to enable hot reload
+            dev_mode = os.environ.get('DEV_MODE', '').lower() in ('1', 'true', 'yes')
+            if dev_mode:
+                print("[DEBUG] Hot reload enabled, starting watcher...", flush=True)
+                focusbreaker_dir = os.path.dirname(os.path.abspath(__file__))
+                hot_reload_watcher = HotReloadWatcher(focusbreaker_dir, enable=True)
+                hot_reload_watcher.start(trigger_hot_reload)
+                logger.info("Hot reload enabled - changes to .py files will trigger restart")
+                print("[DEBUG] Hot reload watcher started", flush=True)
+        except Exception as e:
+            print(f"[ERROR] Exception in on_loading_finished(): {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            logger.error(f"Exception in on_loading_finished(): {e}", exc_info=True)
+            splash.close()
+            app.quit()
 
     splash.finished.connect(on_loading_finished)
+    print("[DEBUG] Connecting splash.finished signal...", flush=True)
+    print("[DEBUG] Starting splash loading animation...", flush=True)
     splash.start_loading()
 
+    print("[DEBUG] Starting Qt event loop (app.exec())...", flush=True)
     result = app.exec()
+    print("[DEBUG] Event loop finished!", flush=True)
     db.close()
     
     # Exit cleanly. The root launcher will handle code 1000 as a restart.

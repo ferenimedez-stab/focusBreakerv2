@@ -9,7 +9,7 @@ from typing import Set, Dict
 
 # ========================= APPLICATION INFO =========================
 APP_NAME = "focusBreaker"
-APP_VERSION = "0.3.0"
+APP_VERSION = "2.0.0"
 APP_AUTHOR = "BoardGirls"
 APP_DESCRIPTION = "Productivity app with enforced break discipline"
 

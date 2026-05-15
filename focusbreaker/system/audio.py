@@ -1,7 +1,20 @@
 import os
 import random
-import pygame
 from typing import Optional
+
+# Lazy-load pygame to avoid hanging on import
+_pygame = None
+
+def _get_pygame():
+    """Lazy-load pygame module on first use."""
+    global _pygame
+    if _pygame is None:
+        try:
+            import pygame
+            _pygame = pygame
+        except ImportError:
+            raise ImportError("pygame module not installed")
+    return _pygame
 
 class AudioManager:
     """
@@ -9,6 +22,7 @@ class AudioManager:
     Uses pygame.mixer for low-latency playback.
     """
     def __init__(self, media_vol: int | float = 80, alarm_vol: int | float = 70):
+        pygame = _get_pygame()
         if not pygame.mixer.get_init():
             pygame.mixer.init()
         self.media_vol = media_vol / 100.0
@@ -39,6 +53,7 @@ class AudioManager:
                 surprise_paths.insert(0, os.path.join(mode_path, random.choice(audio_files)))
         
         # Play the first valid surprise sound found
+        pygame = _get_pygame()
         for sound_path in surprise_paths:
             if os.path.exists(sound_path) and os.path.getsize(sound_path) > 0:
                 try:
@@ -51,6 +66,7 @@ class AudioManager:
     def play_alarm(self):
         """Plays the break-end alarm."""
         # Try .mp3 first, then .wav
+        pygame = _get_pygame()
         alarm_paths = [
             "focusbreaker/assets/media/alarm.mp3",
             "focusbreaker/assets/media/alarm.wav",

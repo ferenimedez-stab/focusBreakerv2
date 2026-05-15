@@ -284,9 +284,14 @@ class AnalyticsPage(QWidget):
             main_grid.addWidget(day_lbl, row_idx, 0)
         
         # Add heatmap cells
-        for i, d in enumerate(dates):
-            row = i % 7
-            col = (i // 7) + 1  # +1 because column 0 is day labels
+        first_date = date.fromisoformat(dates[0])
+        for d in dates:
+            dt = date.fromisoformat(d)
+            # weekday() returns 0 for Monday, 6 for Sunday
+            row = dt.weekday()
+            # Calculate column based on week alignment
+            days_since_start = (dt - first_date).days
+            col = (days_since_start + first_date.weekday()) // 7 + 1
             
             cell = QFrame()
             cell.setFixedSize(16, 16)

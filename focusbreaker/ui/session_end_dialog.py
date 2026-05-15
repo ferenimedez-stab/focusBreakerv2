@@ -28,7 +28,7 @@ class SessionEndDialog(QDialog):
         self.action = 'end'
         self.extend_mins = 0
         
-        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint)
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowCloseButtonHint | Qt.WindowType.WindowStaysOnTopHint)
         self.setModal(True)
         self.setFixedSize(500, 450)
         self._center()

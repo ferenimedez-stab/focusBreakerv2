@@ -58,6 +58,11 @@ class FileChangeHandler(FileSystemEventHandler):
         
         if not event.src_path.endswith('.py'):
             return
+            
+        # Ignore hidden files (e.g. IDE temporary files like .#config.py)
+        import os
+        if os.path.basename(event.src_path).startswith('.'):
+            return
         
         # Debounce rapid changes
         now = time.time()

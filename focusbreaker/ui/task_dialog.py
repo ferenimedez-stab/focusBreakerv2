@@ -4,13 +4,14 @@ Redesigned for modern HCI (Human-Computer Interaction) principles.
 Focuses on visual hierarchy, clear process flow, and interactive feedback.
 """
 import logging
+from PySide6.QtCore import Qt, QTime, QTimer, Signal, QSize, QPropertyAnimation
+from PySide6.QtGui import QIntValidator, QColor, QFont, QPainter, QBrush, QPen
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QFrame,
     QWidget, QSizePolicy, QSpinBox, QRadioButton, QButtonGroup, QTimeEdit, 
-    QGraphicsDropShadowEffect, QStackedWidget, QGridLayout, QApplication
+    QGraphicsDropShadowEffect, QStackedWidget, QGridLayout, QApplication,
+    QGraphicsOpacityEffect
 )
-from PySide6.QtCore import Qt, QTime, QTimer, Signal, QSize
-from PySide6.QtGui import QIntValidator, QColor, QFont, QPainter, QBrush, QPen
 
 from focusbreaker.config import Colors, MODES, Palette
 from focusbreaker.data.models import Task
@@ -217,19 +218,11 @@ class TaskDialog(QDialog):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setModal(True)
         
-        # Geometry logic: Cover the active visible context (important for tray actions)
-        from PySide6.QtWidgets import QApplication
-        target = parent
-        if not target or not target.isVisible():
-            target = QApplication.activeWindow()
-            
-        if target and target.isVisible():
-            self.resize(target.size())
-            self.move(target.mapToGlobal(target.rect().topLeft()))
-        else:
-            screen = QApplication.primaryScreen().geometry()
-            self.resize(screen.size())
-            self.move(screen.topLeft())
+        self.setFixedSize(500, 680)
+        
+        # Center on parent
+        if parent:
+            self.move(parent.geometry().center() - self.rect().center())
         
         self.task_data = {
             'name': '',
@@ -252,22 +245,9 @@ class TaskDialog(QDialog):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         
-        # 1. Full-screen Dimmed backdrop
-        self.backdrop = QFrame()
-        self.backdrop.setObjectName("modal_backdrop")
-        # No border-radius on backdrop to ensure it covers the window edges perfectly
-        self.backdrop.setStyleSheet("QFrame#modal_backdrop { background-color: rgba(0, 0, 0, 0.4); border: none; }")
-        root.addWidget(self.backdrop)
-        
-        # 2. Main Centering Layout
-        main_l = QVBoxLayout(self.backdrop)
-        main_l.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        main_l.setContentsMargins(0, 0, 0, 0)
-        
-        # 3. Modal Shell
+        # Modal Shell
         self.container = QFrame()
         self.container.setObjectName("modal_shell")
-        self.container.setFixedSize(500, 680)
         self.container.setStyleSheet(f"""
             QFrame#modal_shell {{ 
                 background-color: {Palette.SURFACE_DEFAULT}; 
@@ -275,7 +255,7 @@ class TaskDialog(QDialog):
                 border: 1px solid {Palette.SURFACE_DARK}; 
             }}
         """)
-        main_l.addWidget(self.container)
+        root.addWidget(self.container)
         
         l = QVBoxLayout(self.container)
         l.setContentsMargins(32, 24, 32, 32)
@@ -643,7 +623,8 @@ class TaskDialog(QDialog):
         mcl.setContentsMargins(0, 4, 0, 4)
         mcl.setSpacing(12)
 
-        mcl.addWidget(QLabel("Number of breaks"), 0, 0)
+        self.break_count_lbl = QLabel("Number of breaks")
+        mcl.addWidget(self.break_count_lbl, 0, 0)
         self.break_count_spin = QSpinBox()
         self.break_count_spin.setRange(1, 10)
         self.break_count_spin.setValue(2)
@@ -651,7 +632,8 @@ class TaskDialog(QDialog):
         self.break_count_spin.setStyleSheet(self._spinbox_style(compact=True))
         mcl.addWidget(self.break_count_spin, 0, 1)
 
-        mcl.addWidget(QLabel("Break duration (min)"), 1, 0)
+        self.break_dur_lbl = QLabel("Break duration (min)")
+        mcl.addWidget(self.break_dur_lbl, 1, 0)
         self.break_dur_spin = QSpinBox()
         self.break_dur_spin.setRange(1, 60)
         self.break_dur_spin.setValue(5)
@@ -786,26 +768,54 @@ class TaskDialog(QDialog):
             self.next_btn.setEnabled(True)
 
         if mode == "focused":
-            msg = "Deep flow state. One mandatory rest after completion."
-            self.task_data['break_count'] = 1
-            self.task_data['break_duration'] = 15
-        elif is_auto:
-            if mode == "strict":
-                count = total_mins // 52
-                msg = f"{count} sessions of 52 min work + 17 min break."
-                self.task_data['break_count'] = count
-                self.task_data['break_duration'] = 17
+            self.manual_group.setEnabled(True)
+            self.auto_btn.setEnabled(True)
+            
+            if is_auto:
+                self.manual_controls.hide()
+                # Use scaling logic for default
+                brk_dur = 30
+                if total_mins >= 240: brk_dur = 60
+                elif total_mins >= 120: brk_dur = 45
+                
+                msg = f"Deep flow state. {brk_dur} min mandatory rest after completion."
+                self.task_data['break_count'] = 1
+                self.task_data['break_duration'] = brk_dur
             else:
-                count = total_mins // 25
-                msg = f"{count} blocks of 25 min work + 5 min break."
-                self.task_data['break_count'] = count
-                self.task_data['break_duration'] = 5
+                self.manual_controls.show()
+                # Hide count for focused mode as it's always 1
+                self.break_count_lbl.hide()
+                self.break_count_spin.hide()
+                
+                bdur = self.break_dur_spin.value()
+                msg = f"Deep flow state. {bdur} min manual rest after completion."
+                self.task_data['break_count'] = 1
+                self.task_data['break_duration'] = bdur
         else:
-            count = self.break_count_spin.value()
-            bdur = self.break_dur_spin.value()
-            msg = f"Manual schedule: {count} breaks of {bdur} min each."
-            self.task_data['break_count'] = count
-            self.task_data['break_duration'] = bdur
+            self.manual_group.setEnabled(True)
+            self.auto_btn.setEnabled(True)
+            self.break_count_lbl.show()
+            self.break_count_spin.show()
+            
+            if is_auto:
+                self.manual_controls.hide()
+                if mode == "strict":
+                    count = total_mins // 52
+                    msg = f"{count} sessions of 52 min work + 17 min break."
+                    self.task_data['break_count'] = count
+                    self.task_data['break_duration'] = 17
+                else:
+                    count = total_mins // 25
+                    msg = f"{count} blocks of 25 min work + 5 min break."
+                    self.task_data['break_count'] = count
+                    self.task_data['break_duration'] = 5
+            else:
+                self.manual_controls.show()
+                count = self.break_count_spin.value()
+                bdur = self.break_dur_spin.value()
+                msg = f"Manual schedule: {count} breaks of {bdur} min each."
+                self.task_data['break_count'] = count
+                self.task_data['break_duration'] = bdur
             
         self.break_preview.setText(msg)
 

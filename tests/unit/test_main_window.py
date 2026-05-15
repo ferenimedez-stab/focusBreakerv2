@@ -24,38 +24,19 @@ def test_main_window_navigation(MockFloating, MockTray, qtbot, mock_db):
     qtbot.addWidget(window)
     
     # Check initial page
-    assert window.stack.currentIndex() == 0 # Dashboard
+    assert window.stack.currentIndex() == 0 # Home
     
     # Navigate to History
-    qtbot.mouseClick(window._nav_buttons["history"], Qt.LeftButton)
+    qtbot.mouseClick(window.switcher.tabs["history"], Qt.LeftButton)
     assert window.stack.currentIndex() == 1
-    mock_db.get_all_sessions.assert_called()
-
+    
     # Navigate to Analytics
-    qtbot.mouseClick(window._nav_buttons["analytics"], Qt.LeftButton)
+    qtbot.mouseClick(window.switcher.tabs["analytics"], Qt.LeftButton)
     assert window.stack.currentIndex() == 2
     
-    # Navigate to Settings
-    qtbot.mouseClick(window._nav_buttons["settings"], Qt.LeftButton)
-    assert window.stack.currentIndex() == 3
-
-def test_main_window_sidebar_toggle(qtbot, mock_db):
-    with patch("focusbreaker.ui.main_window.SystemTrayManager"), \
-         patch("focusbreaker.ui.main_window.FloatingSessionWindow"):
-        window = MainWindow(mock_db)
-        qtbot.addWidget(window)
-        
-        initial_width = window.sidebar_widget.width()
-        
-        # Click hamburger
-        qtbot.mouseClick(window.hamburger_btn, Qt.LeftButton)
-        assert window._sidebar_collapsed is True
-        assert window.sidebar_widget.width() < initial_width
-        
-        # Click again to expand
-        qtbot.mouseClick(window.hamburger_btn, Qt.LeftButton)
-        assert window._sidebar_collapsed is False
-        assert window.sidebar_widget.width() == initial_width
+    # Navigate to Home again
+    qtbot.mouseClick(window.switcher.tabs["home"], Qt.LeftButton)
+    assert window.stack.currentIndex() == 0
 
 @patch("focusbreaker.ui.main_window.TaskDialog")
 def test_main_window_start_session_flow(MockDialog, qtbot, mock_db):
@@ -73,11 +54,11 @@ def test_main_window_start_session_flow(MockDialog, qtbot, mock_db):
         mock_task.mode = "normal"
         mock_dialog_instance.get_task.return_value = mock_task
         
-        # Trigger new task from dashboard hero card
-        # Using index 0 of left_side_stack which is the hero card
-        hero_card = window.left_side_stack.widget(0)
-        qtbot.mouseClick(hero_card, Qt.LeftButton)
+        # Trigger new task from FAB
+        qtbot.mouseClick(window.fab, Qt.LeftButton)
         
         MockDialog.assert_called_once()
-        assert window.session_mgr.is_active is True
-        assert window.stack.currentIndex() == 4 # Session view
+        # Verify that start_session was called with the correct arguments
+        # This checks the fix for the TypeError
+        assert window.session_mgr.session is not None
+        assert window.session_mgr.session.task_name == "Test Task"

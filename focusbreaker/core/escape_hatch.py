@@ -1,9 +1,23 @@
 import time
 import logging
-import keyboard
 from PySide6.QtCore import QObject, Signal, QTimer
 
 logger = logging.getLogger(__name__)
+
+# Lazy-load keyboard to avoid hanging on import
+_keyboard = None
+
+def _get_keyboard():
+    """Lazy-load keyboard module on first use."""
+    global _keyboard
+    if _keyboard is None:
+        try:
+            import keyboard
+            _keyboard = keyboard
+        except ImportError:
+            logger.error("keyboard module not installed")
+            return None
+    return _keyboard
 
 class EscapeHatch(QObject):
     """
@@ -38,6 +52,12 @@ class EscapeHatch(QObject):
 
     def _check_state(self):
         try:
+            keyboard = _get_keyboard()
+            if keyboard is None:
+                logger.warning("keyboard module not available, escape hatch disabled")
+                self.stop_listening()
+                return
+            
             now = time.time()
             if keyboard.is_pressed(self.combo):
                 if not self._is_pressed:

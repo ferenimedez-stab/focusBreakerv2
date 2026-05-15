@@ -124,11 +124,21 @@ class SessionManager(QObject):
         if self.session is not None:
             self.session.status = status
             self.session.end_time = datetime.now().isoformat()
-            # Set actual duration before saving
-            self.session.actual_duration_minutes = round(self._elapsed / 60) if self._elapsed > 0 else 0
+            # Set actual duration before saving. At least 1 minute if started, otherwise 0.
+            self.session.actual_duration_minutes = max(1, round(self._elapsed / 60)) if self._elapsed > 0 else 0
+            
+            # Compute quality score so stats update correctly
+            self._update_quality()
+            
             session_id = self.session.id
             if session_id is not None:
-                self.db.updateSession(session_id, status=status, end_time=self.session.end_time, actual_duration_minutes=self.session.actual_duration_minutes)
+                self.db.updateSession(
+                    session_id, 
+                    status=status, 
+                    end_time=self.session.end_time, 
+                    actual_duration_minutes=self.session.actual_duration_minutes,
+                    quality_score=self.session.quality_score
+                )
                 self.db.log_event("session_stopped", session_id=session_id, description=f"Status: {status}")
         
         self.session = None
@@ -141,7 +151,7 @@ class SessionManager(QObject):
         self.status_changed.emit(status)
 
     def handle_break_action(self, action: str):
-        if action == "cooldown_finished":
+        if action == "cooldown_finished" or self._in_cooldown:
             self._in_cooldown = False
             self._work_timer.stop()
             self.status_changed.emit("completed")
@@ -234,8 +244,13 @@ class SessionManager(QObject):
                                   actual_duration_minutes=self.session.actual_duration_minutes,
                                   quality_score=self.session.quality_score)
         
-        # Step 54: Update streaks
-        milestones = self.streak_mgr.process_session_completion(self.session)
+        # Step 54: Update streaks with crash protection
+        milestones = []
+        try:
+            if self.streak_mgr:
+                milestones = self.streak_mgr.process_session_completion(self.session)
+        except Exception as e:
+            logger.error(f"STREAK ERROR: Failed to process session completion milestones: {e}", exc_info=True)
         
         completed = self.session
         mode_was = self.session.mode
@@ -243,9 +258,14 @@ class SessionManager(QObject):
         self.session = None
         self.breaks = []
         self._elapsed = 0
+        
+        logger.info(f"Session {session_id} cleanup complete. Emitting completion signals.")
         self.session_completed.emit(completed, milestones)
+        
         if session_id is not None:
-            self.db.log_event("session_completed", session_id=session_id)
+            try:
+                self.db.log_event("session_completed", session_id=session_id)
+            except: pass
         
         if cooldown_mins > 0:
             self._start_cooldown(cooldown_mins, mode_was)

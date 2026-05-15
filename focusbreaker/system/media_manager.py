@@ -15,6 +15,8 @@ class MediaManager:
     Manages default assets and user uploads.
     """
     
+    _history = {} # Track last shown for each mode to prevent immediate repeats
+
     @staticmethod
     def add_user_media(source_path: str, mode: str = 'normal') -> Optional[str]:
         """
@@ -87,9 +89,24 @@ class MediaManager:
 
     @staticmethod
     def get_random_media(mode: str) -> Optional[Dict]:
-        """Returns a random media item for the specified mode."""
+        """
+        Returns a random media item for the specified mode.
+        Implements shuffle-like behavior by preventing immediate repeats.
+        """
         pool = MediaManager.get_all_media(mode)
-        return random.choice(pool) if pool else None
+        if not pool:
+            return None
+        
+        # Filter out the last one shown for this mode if there's more than one choice
+        last = MediaManager._history.get(mode)
+        if len(pool) > 1 and last:
+            temp_pool = [m for m in pool if m['path'] != last]
+            if temp_pool:
+                pool = temp_pool
+        
+        selected = random.choice(pool)
+        MediaManager._history[mode] = selected['path']
+        return selected
 
     @staticmethod
     def delete_user_media(file_path: str):

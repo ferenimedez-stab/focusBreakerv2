@@ -3,10 +3,11 @@ from PySide6.QtWidgets import (
     QPushButton, QFrame, QLineEdit, QScrollArea, QWidget, QStackedWidget,
     QFileDialog, QMessageBox, QCheckBox, QListWidget, QListWidgetItem,
     QGridLayout, QSizePolicy, QLayout, QBoxLayout, QSpacerItem, QDialog,
+    QApplication,
     QProgressBar
 )
-from PySide6.QtCore import Qt, Signal, QSize, QTimer, QTime
-from PySide6.QtGui import QColor, QPixmap, QIcon, QKeySequence, QPainter, QBrush
+from PySide6.QtCore import Qt, Signal, QSize, QTimer, QTime, QPoint, QUrl
+from PySide6.QtGui import QColor, QPixmap, QIcon, QKeySequence, QPainter, QBrush, QDesktopServices
 
 from focusbreaker.config import UIConfig, AppPaths, MediaConfig, Palette
 from focusbreaker.data.db import DBManager
@@ -38,25 +39,29 @@ class SettingsRow(QWidget):
         super().__init__(parent)
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
-        self.main_layout.setSpacing(4)
+        self.main_layout.setSpacing(6)
         
-        top_l = QHBoxLayout()
+        content = QHBoxLayout()
+        content.setSpacing(20)
+        
+        text_v = QVBoxLayout()
+        text_v.setSpacing(2)
         self.lbl = QLabel(label)
         self.lbl.setStyleSheet(f"color: {Palette.TEXT_PRIMARY}; font-size: 14px; font-weight: 700;")
-        top_l.addWidget(self.lbl)
-        top_l.addStretch()
-        
-        self.widget = widget
-        top_l.addWidget(self.widget)
-        self.main_layout.addLayout(top_l)
+        text_v.addWidget(self.lbl)
         
         if subtitle:
             self.sub = QLabel(subtitle)
             self.sub.setStyleSheet(f"color: {Palette.TEXT_SECONDARY}; font-size: 12px; font-weight: 500; border: none; background: transparent;")
             self.sub.setWordWrap(True)
-            self.main_layout.addWidget(self.sub)
+            text_v.addWidget(self.sub)
             
-        self.main_layout.addSpacing(16) # Increased spacing between rows
+        content.addLayout(text_v, 1)
+        
+        self.widget = widget
+        content.addWidget(self.widget)
+        self.main_layout.addLayout(content)
+        self.main_layout.addSpacing(16)
 
 def _spinbox(min_val: int, max_val: int, val: int, suffix: str = " MIN") -> QSpinBox:
     sb = QSpinBox()
@@ -261,31 +266,49 @@ class SettingsPage(QDialog):
         self.setWindowModality(Qt.ApplicationModal)
         
         self.current_tab = "General"
-        self._setup_ui()
         
+        # Increase dimension if parent is maximized (by 1/4 more than previous 960x780)
+        if parent and parent.isMaximized():
+            self.setFixedSize(1200, 980)
+        else:
+            self.setFixedSize(820, 680)
+
+        self._media_edit_mode = False
+        self._selected_media = set()  # set of file paths
+        self.media_grids = {}
+        self.media_edit_btns = {} # mode -> button container
+
+        # Center on parent
         if parent:
-            self.resize(parent.size())
-            self.move(parent.mapToGlobal(parent.rect().topLeft()))
+            self.move(parent.geometry().center() - self.rect().center())
+            
+        self._drag_pos = QPoint()
+        self._setup_ui()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() & Qt.MouseButton.LeftButton:
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            event.accept()
+
+    def exec(self):
+        if self.parent() and hasattr(self.parent(), "show_dim"):
+            self.parent().show_dim(True)
+        res = super().exec()
+        if self.parent() and hasattr(self.parent(), "show_dim"):
+            self.parent().show_dim(False)
+        return res
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         
-        # Backdrop
-        self.backdrop = QFrame()
-        self.backdrop.setObjectName("backdrop")
-        self.backdrop.setStyleSheet("QFrame#backdrop { background-color: rgba(0, 0, 0, 0.4); border-radius: 24px; }")
-        root.addWidget(self.backdrop)
-
-        # Center layout for the container
-        container_outer = QVBoxLayout(self.backdrop)
-        container_outer.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        container_outer.setContentsMargins(40, 40, 40, 40)
-
         self.container = QFrame()
         self.container.setObjectName("modal_container")
-        self.container.setFixedWidth(820)
-        self.container.setMaximumHeight(680)
         self.container.setStyleSheet(f"""
             QFrame#modal_container {{ 
                 background-color: {Palette.SURFACE_DEFAULT}; 
@@ -338,7 +361,7 @@ class SettingsPage(QDialog):
                 image: url(assets/images/check_white.png);
             }}
         """)
-        container_outer.addWidget(self.container)
+        root.addWidget(self.container)
 
         l = QVBoxLayout(self.container)
         l.setContentsMargins(0, 0, 0, 0)
@@ -391,7 +414,7 @@ class SettingsPage(QDialog):
         tabs_l.setSpacing(10)
         
         self.tab_btns = {}
-        for name in ["General", "Focus Modes", "Emergency"]:
+        for name in ["General", "Focus Modes", "Media Library", "Emergency"]:
             btn = QPushButton(name)
             btn.setCheckable(True)
             btn.setFixedHeight(32)
@@ -409,6 +432,7 @@ class SettingsPage(QDialog):
         
         self.stack.addWidget(self._scroll_wrap(self._general_tab()))
         self.stack.addWidget(self._scroll_wrap(self._timing_tab()))
+        self.stack.addWidget(self._scroll_wrap(self._media_tab()))
         self.stack.addWidget(self._scroll_wrap(self._advanced_tab()))
         
         l.addWidget(self.stack, 1)
@@ -446,7 +470,7 @@ class SettingsPage(QDialog):
 
     def _switch_tab(self, name):
         self.current_tab = name
-        idx = {"General": 0, "Focus Modes": 1, "Emergency": 2}.get(name, 0)
+        idx = {"General": 0, "Focus Modes": 1, "Media Library": 2, "Emergency": 3}.get(name, 0)
         self.stack.setCurrentIndex(idx)
         
         for n, btn in self.tab_btns.items():
@@ -526,6 +550,297 @@ class SettingsPage(QDialog):
         layout.addStretch()
         return w
 
+    def _media_tab(self) -> QWidget:
+        w = QWidget()
+        layout = QVBoxLayout(w)
+        layout.setContentsMargins(32, 10, 32, 32)
+        layout.setSpacing(24)
+        
+    def _media_tab(self) -> QWidget:
+        w = QWidget()
+        layout = QVBoxLayout(w)
+        layout.setContentsMargins(32, 10, 32, 32)
+        layout.setSpacing(16)
+        
+        header_l = QHBoxLayout()
+        header_l.addWidget(_section("Media Library"))
+        header_l.addStretch()
+        
+        self.master_edit_btn = QPushButton("EDIT")
+        self.master_edit_btn.setFixedSize(80, 30)
+        self.master_edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.master_edit_btn.setStyleSheet(f"""
+            QPushButton {{ 
+                background: {Palette.SURFACE_DARK}; color: {Palette.TEXT_PRIMARY}; 
+                border-radius: 15px; font-weight: 800; font-size: 10px;
+            }}
+            QPushButton:hover {{ background: {Palette.BORDER_DEFAULT}; }}
+        """)
+        self.master_edit_btn.clicked.connect(self._toggle_media_edit_mode)
+        header_l.addWidget(self.master_edit_btn)
+        layout.addLayout(header_l)
+
+        from PySide6.QtWidgets import QTabWidget
+        self.media_tabs = QTabWidget()
+        self.media_tabs.setStyleSheet(f"""
+            QTabWidget::pane {{ border: 1px solid {Palette.SURFACE_DARK}; border-radius: 16px; background: white; }}
+            QTabBar::tab {{
+                background: {Palette.SURFACE_DEFAULT};
+                padding: 12px 24px;
+                margin-right: 4px;
+                border-top-left-radius: 10px;
+                border-top-right-radius: 10px;
+                font-weight: 700;
+                color: {Palette.TEXT_SECONDARY};
+            }}
+            QTabBar::tab:selected {{
+                background: white;
+                color: {Palette.BRAND_PRIMARY};
+                border: 1px solid {Palette.SURFACE_DARK};
+                border-bottom: none;
+            }}
+        """)
+
+        for mode in ["normal", "strict", "focused"]:
+            page = QWidget()
+            page_l = QVBoxLayout(page)
+            page_l.setContentsMargins(20, 20, 20, 20)
+            page_l.setSpacing(12)
+            
+            # Action Row (Dynamic based on Edit Mode)
+            action_container = QWidget()
+            actions = QHBoxLayout(action_container)
+            actions.setContentsMargins(0, 0, 0, 0)
+            
+            # Default View Controls
+            self.upload_btn = QPushButton("+ UPLOAD")
+            self.upload_btn.setFixedSize(100, 32)
+            self.upload_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.upload_btn.setStyleSheet(f"background: {Palette.BRAND_PRIMARY}; color: white; border-radius: 16px; font-weight: 800; font-size: 11px;")
+            self.upload_btn.clicked.connect(lambda _, m=mode: self._on_upload_media(m))
+            
+            # Edit Mode Controls
+            self.edit_controls = QWidget()
+            ec_l = QHBoxLayout(self.edit_controls)
+            ec_l.setContentsMargins(0, 0, 0, 0)
+            ec_l.setSpacing(8)
+            
+            sel_all = QPushButton("SELECT ALL")
+            sel_all.setStyleSheet(f"color: {Palette.BRAND_PRIMARY}; font-weight: 800; font-size: 10px; background: transparent; border: none;")
+            sel_all.clicked.connect(lambda _, m=mode: self._select_all_media(m))
+            
+            del_sel = QPushButton("DELETE SELECTED")
+            del_sel.setStyleSheet(f"color: #FF5F57; font-weight: 800; font-size: 10px; background: transparent; border: none;")
+            del_sel.clicked.connect(lambda _, m=mode: self._delete_selected_media(m))
+            
+            ec_l.addWidget(sel_all)
+            ec_l.addWidget(del_sel)
+            ec_l.addStretch()
+            
+            self.edit_controls.setVisible(False)
+            
+            actions.addWidget(self.upload_btn)
+            actions.addWidget(self.edit_controls)
+            actions.addStretch()
+            
+            page_l.addWidget(action_container)
+            
+            # Save references to toggle
+            self.media_edit_btns[mode] = (self.upload_btn, self.edit_controls)
+            
+            # Gallery Area
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.Shape.NoFrame)
+            scroll.setStyleSheet("background: transparent;")
+            
+            grid_container = QWidget()
+            grid_container.setStyleSheet("background: transparent;")
+            grid = QGridLayout(grid_container)
+            grid.setSpacing(16)
+            grid.setContentsMargins(0, 8, 0, 0)
+            
+            self.media_grids[mode] = grid
+            self._populate_media_grid(mode)
+            
+            scroll.setWidget(grid_container)
+            page_l.addWidget(scroll)
+            
+            self.media_tabs.addTab(page, mode.capitalize())
+
+        layout.addWidget(self.media_tabs)
+        return w
+
+    def _populate_media_grid(self, mode):
+        grid = self.media_grids[mode]
+        # Clear existing
+        while grid.count():
+            item = grid.takeAt(0)
+            if item.widget(): item.widget().deleteLater()
+            
+        from focusbreaker.system.media_manager import MediaManager
+        all_m = MediaManager.get_all_media(mode)
+        
+        if not all_m:
+            empty = QLabel("No media found for this mode.")
+            empty.setStyleSheet(f"color: {Palette.TEXT_MUTED}; font-size: 14px; font-weight: 600; padding: 40px;")
+            empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            grid.addWidget(empty, 0, 0)
+            return
+
+        cols = 3 if self.width() < 1000 else 4
+        for i, m in enumerate(all_m):
+            card = QFrame()
+            card.setObjectName("media_card")
+            card.setFixedSize(220, 180)
+            card.setCursor(Qt.CursorShape.PointingHandCursor)
+            
+            is_selected = m['path'] in self._selected_media
+            border_c = Palette.BRAND_PRIMARY if is_selected else Palette.BORDER_DEFAULT
+            bg_c = Palette.SURFACE_DEFAULT if is_selected else "white"
+            
+            card.setStyleSheet(f"""
+                QFrame#media_card {{
+                    background: {bg_c};
+                    border: 2px solid {border_c};
+                    border-radius: 14px;
+                }}
+                QFrame#media_card:hover {{ border-color: {Palette.BRAND_PRIMARY}; background: {Palette.SURFACE_DEFAULT}; }}
+            """)
+            
+            # Click Behavior
+            def on_card_click(e, path=m['path'], mo=mode):
+                if self._media_edit_mode:
+                    self._toggle_media_selection(path, mo)
+                else:
+                    QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(path)))
+            card.mousePressEvent = on_card_click
+            
+            layout = QVBoxLayout(card)
+            layout.setContentsMargins(1, 1, 1, 8)
+            layout.setSpacing(6)
+            
+            # Preview Area
+            preview = QLabel()
+            preview.setFixedSize(216, 110)
+            preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            preview.setStyleSheet("border-top-left-radius: 12px; border-top-right-radius: 12px; background: #e8e8e8; border: none;")
+            
+            import os
+            m_abs_path = os.path.abspath(m['path'])
+            if m['type'] == 'image':
+                pix = QPixmap(m_abs_path)
+                if not pix.isNull():
+                    preview.setPixmap(pix.scaled(216, 110, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
+                else:
+                    preview.setText("🖼️\nLOAD ERROR")
+                    preview.setStyleSheet("color: #999; font-size: 10px; font-weight: 800; background: #eee;")
+            else:
+                preview.setText("🎬\nVIDEO")
+                preview.setStyleSheet("font-weight: 900; font-size: 16px; color: #777; border-top-left-radius: 12px; border-top-right-radius: 12px; background: #ddd;")
+            
+            # Selection Checkbox Overlay (Visual Only, card click handles it)
+            if self._media_edit_mode:
+                check_icon = QLabel(preview)
+                check_icon.setFixedSize(24, 24)
+                check_icon.move(184, 8)
+                check_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                if is_selected:
+                    check_icon.setText("✓")
+                    check_icon.setStyleSheet(f"background: {Palette.BRAND_PRIMARY}; color: white; border-radius: 12px; font-weight: 800; border: none;")
+                else:
+                    check_icon.setStyleSheet(f"background: rgba(255,255,255,0.7); border: 2px solid {Palette.TEXT_MUTED}; border-radius: 12px; border: none;")
+
+            layout.addWidget(preview)
+            
+            info = QVBoxLayout()
+            info.setContentsMargins(12, 4, 12, 4)
+            info.setSpacing(4)
+            
+            name = QLabel(m['name'])
+            name.setStyleSheet(f"font-size: 11px; font-weight: 700; color: {Palette.TEXT_PRIMARY}; background: transparent; border: none;")
+            name.setWordWrap(False)
+            
+            metrics = QHBoxLayout()
+            type_tag = QLabel("USER" if m['is_user'] else "SYSTEM")
+            type_tag.setStyleSheet(f"font-size: 8px; font-weight: 900; color: {'#2A9B93' if m['is_user'] else '#9AAEAC'}; background: transparent; border: none;")
+            metrics.addWidget(type_tag)
+            metrics.addStretch()
+            
+            info.addWidget(name)
+            info.addLayout(metrics)
+            layout.addLayout(info)
+            
+            grid.addWidget(card, i // cols, i % cols)
+        
+        # Add stretch to keep items at top
+        if len(all_m) < cols:
+            grid.setColumnStretch(cols - 1, 1)
+
+    def _toggle_media_edit_mode(self):
+        self._media_edit_mode = not self._media_edit_mode
+        self.master_edit_btn.setText("CANCEL" if self._media_edit_mode else "EDIT")
+        self.master_edit_btn.setStyleSheet(f"""
+            QPushButton {{ 
+                background: {Palette.BRAND_PRIMARY if self._media_edit_mode else Palette.SURFACE_DARK}; 
+                color: {'white' if self._media_edit_mode else Palette.TEXT_PRIMARY}; 
+                border-radius: 15px; font-weight: 800; font-size: 10px;
+            }}
+        """)
+        
+        if not self._media_edit_mode:
+            self._selected_media.clear()
+            
+        # Update all grid views
+        for mode, (up, ed) in self.media_edit_btns.items():
+            up.setVisible(not self._media_edit_mode)
+            ed.setVisible(self._media_edit_mode)
+            self._populate_media_grid(mode)
+
+    def _toggle_media_selection(self, path, mode):
+        if path in self._selected_media:
+            self._selected_media.remove(path)
+        else:
+            self._selected_media.add(path)
+        self._populate_media_grid(mode)
+
+    def _select_all_media(self, mode):
+        from focusbreaker.system.media_manager import MediaManager
+        all_m = MediaManager.get_all_media(mode)
+        # Only select user media (optional, but usually users don't want to delete system media)
+        # Actually, the user wants to "remove", and system media is protected in media_manager.
+        for m in all_m:
+            self._selected_media.add(m['path'])
+        self._populate_media_grid(mode)
+
+    def _delete_selected_media(self, mode):
+        if not self._selected_media: return
+        
+        count = len(self._selected_media)
+        dlg = ThemedConfirmDialog("Remove Media?", f"Are you sure you want to delete {count} selected item(s)? This cannot be undone.", self, danger=True)
+        if dlg.exec():
+            from focusbreaker.system.media_manager import MediaManager
+            for path in list(self._selected_media):
+                MediaManager.delete_user_media(path)
+                self._selected_media.remove(path)
+            
+            # Exit edit mode after bulk delete
+            self._toggle_media_edit_mode()
+            self._populate_media_grid(mode)
+
+    def _on_upload_media(self, mode):
+        from PySide6.QtWidgets import QFileDialog
+        from focusbreaker.config import MediaConfig
+        filter_str = f"Media ({' '.join(['*' + f for f in MediaConfig.SUPPORTED_IMAGE_FORMATS | MediaConfig.SUPPORTED_VIDEO_FORMATS])})"
+        files, _ = QFileDialog.getOpenFileNames(self, f"Upload Media for {mode.capitalize()}", "", filter_str)
+        
+        if files:
+            from focusbreaker.system.media_manager import MediaManager
+            for f in files:
+                MediaManager.add_user_media(f, mode)
+            self._populate_media_grid(mode)
+            ThemedMessageDialog("Upload Complete", f"Successfully added {len(files)} items to your {mode} library.", self).exec()
+
     def _advanced_tab(self) -> QWidget:
         w = QWidget()
         layout = QVBoxLayout(w)
@@ -554,6 +869,7 @@ class SettingsPage(QDialog):
         layout.addSpacing(8)
         self.combo_btn = QPushButton(getattr(self.settings, 'escape_hatch_combo', 'CTRL+ALT+SHIFT+E'))
         self.combo_btn.setFixedHeight(44)
+        self.combo_btn.setMinimumWidth(200)
         self.combo_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.combo_btn.setStyleSheet(f"""
             QPushButton {{
@@ -564,7 +880,6 @@ class SettingsPage(QDialog):
                 font-family: 'JetBrains Mono';
                 font-weight: 800;
                 font-size: 14px;
-                text-align: left;
                 padding: 0 16px;
             }}
             QPushButton:hover {{ border-color: {Palette.BRAND_PRIMARY}; }}
@@ -634,8 +949,11 @@ class SettingsPage(QDialog):
         )
         if dlg.exec():
             self.db.reset_database()
-            from PySide6.QtWidgets import QApplication
-            QApplication.exit(1000)
+            self.accept()
+
+            app = QApplication.instance()
+            if app is not None:
+                QTimer.singleShot(0, lambda: app.exit(1000))
 
     def _save(self):
         s = self.settings

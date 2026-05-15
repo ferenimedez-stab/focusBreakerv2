@@ -19,20 +19,29 @@ class DBManager:
 
     def connect(self):
         """Establish a connection to the database. Re-opens if closed."""
+        print(f"[DEBUG DB] connect() called, self.conn={self.conn}", flush=True)
         if self.conn:
             try:
+                print("[DEBUG DB] Testing existing connection...", flush=True)
                 self._db.execute("SELECT 1")
+                print("[DEBUG DB] Existing connection is valid", flush=True)
                 return 
             except (sqlite3.ProgrammingError, sqlite3.OperationalError) as e:
                 logger.warning(f"Existing database connection failed, reconnecting: {e}")
                 self.conn = None
         
+        print(f"[DEBUG DB] Creating new database connection to {self.db_path}...", flush=True)
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        print("[DEBUG DB] Connection created", flush=True)
         self._db.row_factory = sqlite3.Row
         self._db.execute("PRAGMA foreign_keys = ON")
+        print("[DEBUG DB] Setting up database...", flush=True)
         self.init_database()
+        print("[DEBUG DB] Migrating database...", flush=True)
         self.migrate_database()
+        print("[DEBUG DB] Adding task columns...", flush=True)
         self._add_task_columns()
+        print("[DEBUG DB] Database connection complete!", flush=True)
         
     def _add_task_columns(self) -> None:
         try:
@@ -52,7 +61,9 @@ class DBManager:
             self.conn = None
 
     def init_database(self) -> None:
+        print("[DEBUG DB] init_database() called", flush=True)
         self._ensure_connected()
+        print("[DEBUG DB] Creating database tables...", flush=True)
         c = self._db.cursor()
         c.executescript("""
             CREATE TABLE IF NOT EXISTS tasks (
@@ -135,6 +146,8 @@ class DBManager:
         for k, v in defaults.items():
             c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
         self._db.commit()
+        print("[DEBUG DB] init_database() complete", flush=True)
+        self._cleanup_crashed_sessions()
 
     def seed_sample_data(self) -> None:
         """Seed the database with specific data from the prompt."""
@@ -220,14 +233,19 @@ class DBManager:
         logger.info(f"Seeding complete. Total sessions: {len(all_sessions)}")
 
     def migrate_database(self) -> None:
+        print("[DEBUG DB] migrate_database() called", flush=True)
         self._ensure_connected()
+        print("[DEBUG DB] Checking for missing columns...", flush=True)
         c = self._db.cursor()
         c.execute("PRAGMA table_info(work_sessions)")
         cols = [r[1] for r in c.fetchall()]
         ws_req = {"emergency_exits": "INTEGER DEFAULT 0", "snooze_passes_remaining": "INTEGER DEFAULT 3", "extended_count": "INTEGER DEFAULT 0", "actual_duration_minutes": "INTEGER DEFAULT 0", "created_at": "TEXT DEFAULT ''"}
         for col, dtype in ws_req.items():
-            if col not in cols: c.execute(f"ALTER TABLE work_sessions ADD COLUMN {col} {dtype}")
+            if col not in cols: 
+                print(f"[DEBUG DB] Adding missing column: {col}", flush=True)
+                c.execute(f"ALTER TABLE work_sessions ADD COLUMN {col} {dtype}")
         self._db.commit()
+        print("[DEBUG DB] migrate_database() complete", flush=True)
 
     def _ensure_connected(self) -> None:
         if self.conn is None:
@@ -278,9 +296,9 @@ class DBManager:
     def get_all_sessions(self, limit: Optional[int] = 50) -> List[WorkSession]:
         self._ensure_connected()
         if limit is None:
-            rows = self._db.execute("SELECT * FROM work_sessions ORDER BY start_time DESC").fetchall()
+            rows = self._db.execute("SELECT * FROM work_sessions WHERE status != 'in_progress' ORDER BY start_time DESC").fetchall()
         else:
-            rows = self._db.execute("SELECT * FROM work_sessions ORDER BY start_time DESC LIMIT ?", (limit,)).fetchall()
+            rows = self._db.execute("SELECT * FROM work_sessions WHERE status != 'in_progress' ORDER BY start_time DESC LIMIT ?", (limit,)).fetchall()
         return [WorkSession(**dict(r)) for r in rows]
 
     def getSession(self, session_id: int) -> Optional[WorkSession]:
@@ -333,27 +351,16 @@ class DBManager:
         self._ensure_connected()
         status_filter = "('completed', 'ended_by_user')"
         
+        total = self._db.execute(f"SELECT COUNT(*) FROM work_sessions WHERE status IN {status_filter}").fetchone()[0]
+        total_min = self._db.execute(f"SELECT SUM(actual_duration_minutes) FROM work_sessions WHERE status IN {status_filter}").fetchone()[0] or 0
+        avg_q = self._db.execute(f"SELECT AVG(quality_score) FROM work_sessions WHERE status IN {status_filter}").fetchone()[0] or 0.0
+        
+        # We still need sessions_data for compliance calculation
         sessions_data = self._db.execute(f"""
             SELECT mode, actual_duration_minutes, start_time, end_time, breaks_taken 
             FROM work_sessions WHERE status IN {status_filter}
         """).fetchall()
-        
-        total = len(sessions_data)
-        total_min = 0
         settings = self.get_settings()
-        
-        for row in sessions_data:
-            mode, actual_min, start, end, taken = row
-            calc_min = actual_min
-            if start and end:
-                try:
-                    s_dt = datetime.fromisoformat(start)
-                    e_dt = datetime.fromisoformat(end)
-                    calc_min = round((e_dt - s_dt).total_seconds() / 60)
-                except: pass
-            total_min += calc_min
-        
-        avg_q = self._db.execute(f"SELECT AVG(quality_score) FROM work_sessions WHERE status IN {status_filter}").fetchone()[0] or 0.0
         compliance = self._calculate_compliance(sessions_data, settings)
 
         return {
@@ -540,9 +547,16 @@ class DBManager:
         row = self._db.execute("SELECT value FROM settings WHERE key='is_first_run'").fetchone()
         return row[0] == "True" if row else False
 
-    def complete_first_run(self):
+    def complete_first_run(self) -> None:
         self._ensure_connected()
         self._db.execute("UPDATE settings SET value='False' WHERE key='is_first_run'")
+        self._db.commit()
+
+    def _cleanup_crashed_sessions(self):
+        """Mark any lingering 'in_progress' sessions as 'crashed' on startup."""
+        self._ensure_connected()
+        now = datetime.now().isoformat()
+        self._db.execute("UPDATE work_sessions SET status = 'crashed', end_time = ? WHERE status = 'in_progress'", (now,))
         self._db.commit()
 
     def log_event(self, event_type: str, session_id: Optional[int] = None, break_id: Optional[int] = None, description: str = "") -> None:
